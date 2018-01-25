@@ -1,0 +1,17 @@
+Django==1.9.4
+gunicorn==19.6.0
+sklearn
+pandas
+geocoder
+gmplot
+numpy
+fpdf
+#selenium
+scipy
+xlrd
+openpyxl
+google-api-python-client
+httplib2
+googleapiclient
+oauth2client==1.5.2
+
