@@ -7,10 +7,14 @@ import numpy as np
 import csv
 
 from fpdf import FPDF
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium import webdriver
+
 import os
 import time
 import zipfile
+import smtplib
+import email
 
 import httplib2
 
@@ -18,14 +22,19 @@ from googleapiclient import discovery
 from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
+from google.oauth2 import service_account
 import base64
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from googleapiclient import errors, discovery
+from pyvirtualdisplay import Display
+from email.MIMEMultipart import MIMEMultipart
+from email.Utils import COMMASPACE
+from email.MIMEBase import MIMEBase
+from email.parser import Parser
+from email.MIMEImage import MIMEImage
+from email.MIMEText import MIMEText
+from email.MIMEAudio import MIMEAudio
 import mimetypes
-from email.mime.image import MIMEImage
-from email.mime.audio import MIMEAudio
-from email.mime.base import MIMEBase
+from email.encoders import encode_base64
 
 
 
@@ -55,12 +64,6 @@ def haversine(lat1, lon1, lat2, lon2):
   return R * c
 
 
-#Use the Google geocoder to get the lat and lon from an address
-def get_coordinates(address):
-    g = geocoder.google(address)
-    return list(g.latlng)
-
-
 #Take the data (master list of addresses)
 #And the canvas_location (central address)
 #And find the num_turfs * turf_sizes closest addresses
@@ -83,7 +86,7 @@ def make_filtered_file(data,canvas_location,num_turfs,turf_sizes,new_file_name):
 
 
 def get_coordinates(address,check_intersect=True):
-    g = geocoder.google(address)
+    g = geocoder.arcgis(address)
     if check_intersect:
         if not g.address:
             return []
@@ -605,9 +608,19 @@ def get_street_list(df):
 #We are opening it in a browser and taking a screenshot
 #So if there's a better way that is preferable
 def make_img_file(cluster,folder):
+    display = Display(visible=0, size=(800, 800))  
+    display.start()
     #Have a virtual Chrome driver open the html file
-    driver = webdriver.Chrome()  
-    driver.get("file:///home/mike/canvas_cutting/canvas_cutting/{folder}/temp_map.html".format(folder=folder))
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument('headless')
+    chrome_options.add_argument('no-sandbox')
+    driver = webdriver.Chrome(chrome_options=chrome_options)   
+    #driver = webdriver(\
+        #command_executor='http://172.19.0.5:4444/wd/hub',\
+        #desired_capabilities=DesiredCapabilities.CHROME)   
+    cwd = os.getcwd()
+
+    driver.get("file://{cwd}/{folder}/temp_map.html".format(cwd=cwd,folder=folder))
     #Wait 4 seconds for the page to load
     time.sleep(4)      
     #Save the screenshot as a file
@@ -742,121 +755,6 @@ def write_assign_sheet(pdf,row,turf_size):
     pdf.ln(th)
 
 
-#Get credentials for sending an email
-def get_credentials():
-    flags = None
-    SCOPES = 'https://www.googleapis.com/auth/gmail.send'
-    CLIENT_SECRET_FILE = 'client_secret.json'
-    APPLICATION_NAME = 'Turf Clustering App'
-    home_dir = os.path.expanduser('~')
-    credential_dir = os.path.join(home_dir, '.credentials')
-    if not os.path.exists(credential_dir):
-        os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,
-                                   'gmail-python-email-send.json')
-    store = Storage(credential_path)
-    credentials = store.get()
-    if not credentials or credentials.invalid:
-        flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, SCOPES)
-        flow.user_agent = APPLICATION_NAME
-        flags = tools.argparser.parse_args(args=[])
-        credentials = tools.run_flow(flow, store,flags)
-        print('Storing credentials to ' + credential_path)
-    return credentials
-
-
-#Send an email
-def SendMessage(sender, to, subject, msgHtml, msgPlain, attachmentFile=None):
-    credentials = get_credentials()
-    http = credentials.authorize(httplib2.Http())
-    service = discovery.build('gmail', 'v1', http=http)
-    if attachmentFile:
-        message1 = createMessageWithAttachment(sender, to, subject, msgHtml, msgPlain, attachmentFile)
-    else: 
-        message1 = CreateMessageHtml(sender, to, subject, msgHtml, msgPlain)
-    result = SendMessageInternal(service, "me", message1)
-    return result
-
-#Function for sending an email
-def SendMessageInternal(service, user_id, message):
-    try:
-        message = (service.users().messages().send(userId=user_id, body=message).execute())
-        print('Message Id: %s' % message['id'])
-        return message
-    except errors.HttpError as error:
-        print('An error occurred: %s' % error)
-        return "Error"
-    return "OK"
-
-
-#Function for creating email html
-def CreateMessageHtml(sender, to, subject, msgHtml, msgPlain):
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = sender
-    msg['To'] = to
-    msg.attach(MIMEText(msgPlain, 'plain'))
-    msg.attach(MIMEText(msgHtml, 'html'))
-    return {'raw': base64.urlsafe_b64encode(msg.as_string())}
-
-#Create an email message with an attachment
-def createMessageWithAttachment(
-    sender, to, subject, msgHtml, msgPlain, attachmentFile):
-    """Create a message for an email.
-
-    Args:
-      sender: Email address of the sender.
-      to: Email address of the receiver.
-      subject: The subject of the email message.
-      msgHtml: Html message to be sent
-      msgPlain: Alternative plain text message for older email clients          
-      attachmentFile: The path to the file to be attached.
-
-    Returns:
-      An object containing a base64url encoded email object.
-    """
-    message = MIMEMultipart('mixed')
-    message['to'] = to
-    message['from'] = sender
-    message['subject'] = subject
-
-    messageA = MIMEMultipart('alternative')
-    messageR = MIMEMultipart('related')
-
-    messageR.attach(MIMEText(msgHtml, 'html'))
-    messageA.attach(MIMEText(msgPlain, 'plain'))
-    messageA.attach(messageR)
-
-    message.attach(messageA)
-
-    print("create_message_with_attachment: file: %s" % attachmentFile)
-    content_type, encoding = mimetypes.guess_type(attachmentFile)
-
-    if content_type is None or encoding is not None:
-        content_type = 'application/octet-stream'
-    main_type, sub_type = content_type.split('/', 1)
-    if main_type == 'text':
-        fp = open(attachmentFile, 'rb')
-        msg = MIMEText(fp.read(), _subtype=sub_type)
-        fp.close()
-    elif main_type == 'image':
-        fp = open(attachmentFile, 'rb')
-        msg = MIMEImage(fp.read(), _subtype=sub_type)
-        fp.close()
-    elif main_type == 'audio':
-        fp = open(attachmentFile, 'rb')
-        msg = MIMEAudio(fp.read(), _subtype=sub_type)
-        fp.close()
-    else:
-        fp = open(attachmentFile, 'rb')
-        msg = MIMEBase(main_type, sub_type)
-        msg.set_payload(fp.read())
-        fp.close()
-    filename = os.path.basename(attachmentFile)
-    msg.add_header('Content-Disposition', 'attachment', filename=filename)
-    message.attach(msg)
-
-    return {'raw': base64.urlsafe_b64encode(message.as_string())}
 
 #Convert a folder to a zip file
 def zipdir(path, ziph):
@@ -871,11 +769,43 @@ def zip_folder(folder):
     zipdir(folder + '/temp_folder', zipf)
     zipf.close()
 
+#Send email
+def send_smtp_email(to,address,subject,body,pw,attach=None):
+    smtp_host = 'smtp.gmail.com'
+    smtp_port = 587
+    server = smtplib.SMTP()
+    server.connect(smtp_host,smtp_port)
+    server.ehlo()
+    server.starttls()
+    server.login(address,pw)
+    
+    msg = email.MIMEMultipart.MIMEMultipart()
+    msg['From'] = address
+    msg['To'] = to
+    msg['Subject'] = subject
+    if attach:
+        attachments = [attach]
+        for filename in attachments:
+            mimetype, encoding = mimetypes.guess_type(filename)
+            mimetype = mimetype.split('/', 1)
+            fp = open(filename, 'rb')
+            attachment = MIMEBase(mimetype[0], mimetype[1])
+            attachment.set_payload(fp.read())
+            fp.close()
+            encode_base64(attachment)
+            attachment.add_header('Content-Disposition', 'attachment',
+                                  filename=os.path.basename(filename))
+            msg.attach(attachment)
+    server.sendmail(address,to,msg.as_string())
+
 #Send the email
 def send_email(to,folder_path):
     zip_folder(folder_path)
-    SendMessage("turfclusteringapp@gmail.com", to, "Here are your turfs", "", "Here is some stuff", attachmentFile=folder_path + '/temp_email.zip')
+    send_smtp_email(to,"turfclusteringapp@gmail.com","Here are your turfs","Here's some stuff","bagelsandwiches",attach=folder_path + '/temp_email.zip')
+
 
 #Send an error email if a process fails
 def send_error_email(to):
-    SendMessage("turfclusteringapp@gmail.com", to, "Error making your turfs", "", "We were not able to generate your turfs. Unfortunately we hit the API limit checking addresses to make your turfs. Please run again in 24 hours.")
+    send_smtp_email(to,"turfclusteringapp@gmail.com","Error making your turfs","We were not able to generate your turfs. Unfortunately we hit the API limit checking addresses to make your turfs. Please run again in 24 hours.","bagelsandwiches")
+
+
