@@ -1,11 +1,10 @@
 from django import forms
 
 class CutterForm(forms.Form):
-    center_address = forms.CharField(max_length=50,required=False)
-    email = forms.EmailField(max_length=254,required=False)
-    output_filename = forms.CharField(max_length=50,required=False)
-    turf_count = forms.IntegerField(required=False)
-    turf_size = forms.IntegerField(required=False)
+    center_address = forms.CharField(max_length=50,required=True,help_text="Be sure to include city and state")
+    email = forms.EmailField(max_length=254,required=True)
+    turf_count = forms.IntegerField(required=True)
+    turf_size = forms.IntegerField(required=True)
 
     """def clean(self):
         cleaned_data = super(CutterForm, self).clean()

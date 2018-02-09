@@ -11,10 +11,14 @@ import os
 import shutil
 from random import randint
 
+from selenium import webdriver
+from pyvirtualdisplay import Display
+
+
 from utilities import make_filtered_file, update_thresholds, load_threshold_dict, update_slice_data_nulls, update_slice_data_avgs,\
 update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets, get_cluster_totals, update_cluster_numbers,\
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
-write_assign_sheet, send_email 
+write_assign_sheet, send_email, send_error_email
 
 
 @shared_task
@@ -23,8 +27,9 @@ def output_turfs(form):
     num_clusters = form['turf_count']
     turf_size = form['turf_size']
     center_address = form['center_address']
-    filename = form['output_filename']
     email = form['email']
+
+    #send_error_email(email)
     
     folder_name = 'temp_folder_' + str(randint(1000,10000))
 
@@ -35,6 +40,7 @@ def output_turfs(form):
     #Updated data is the master list of addresses and # of registered voters
     #Will replace with an actual database in a future update
     data = pd.read_excel("Updated_data.xlsx")
+    #data = pd.read_excel("Precinct_data.xlsx")
 
 
     #Based on turf size and central point take the X closest addresses
@@ -86,7 +92,6 @@ def output_turfs(form):
     slice_data_updated = check_bad_streets(slice_data_updated,threshold_dict)
 
 
-
     #Scroll through turfs and split turfs with too many doors into 2
     #As long as there are 2 turfs
     check_for_splits = True
@@ -104,12 +109,13 @@ def output_turfs(form):
             #And then subtract (.3 * the turf size) doors for each km of walking distance
             #We've found these numbers are OK for a 2.5 hour canvas, erring to the side of being too big
             #Def want to make these configurable
-            max_size = 2.4 * turf_size - (.3 * turf_size * i.walking_distance)
+            max_size = 2 * turf_size - (.25 * turf_size * i.walking_distance)
             #Only split a turf if:
             #1. It has more doors than the max
             #2. It has more than 1 address (this is too keep it 1 team per address and avoid confusion)
             #(We never split into more than 2 turfs, it was just too messy when I tried it with more).
             splits = min(int(i.doors)/int(max_size/2),int(i.addresses),2)
+            splits = max(splits,1)
             if splits > 1:
                 #Split turf into 2
                 slice_data_updated = split_cluster(slice_data_updated,i.Cluster,splits)
@@ -131,11 +137,14 @@ def output_turfs(form):
     #Get cluster-level statistic
     cluster_totals = get_cluster_totals(slice_data_updated)
 
+    
     #Scroll through clusters and try to merge small turfs with another turf
     missing_clusters = []
     for i in cluster_totals.itertuples():
+        if i.Cluster in missing_clusters:
+            continue
         #Min desired turf size is 1.8 * turf_size - (.3 * turf size * walking distance in km)
-        min_size = 1.8 * turf_size - (.3 * turf_size * i.walking_distance)
+        min_size = 1.4 * turf_size - (.25 * turf_size * i.walking_distance)
         if i.doors < (min_size) and i.addresses < (min_size):
             #Function checks for a potential merger
             upd_cluster = new_whole_cluster(cluster_totals,slice_data_updated,i.Cluster,threshold_dict,turf_size,missing_clusters)
@@ -144,6 +153,32 @@ def output_turfs(form):
                 slice_data_updated.loc[(slice_data_updated.Cluster == i.Cluster) ,"Cluster"] = upd_cluster
                 #Updated the list of merged clusters so we don't try to merge with a cluster that already merged
                 missing_clusters.append(i.Cluster)
+                missing_clusters.append(upd_cluster)
+
+
+    #Reorder clusters by distance
+    slice_data_updated = update_cluster_numbers(slice_data_updated)
+    #Get cluster-level statistic
+    cluster_totals = get_cluster_totals(slice_data_updated)
+
+    
+    #Scroll through clusters and try to merge small turfs with another turf
+    missing_clusters = []
+    for i in cluster_totals.itertuples():
+        if i.Cluster in missing_clusters:
+            continue
+        #Min desired turf size is 1.8 * turf_size - (.3 * turf size * walking distance in km)
+        min_size = 1.4 * turf_size - (.25 * turf_size * i.walking_distance)
+        if i.doors < (min_size) and i.addresses < (min_size):
+            #Function checks for a potential merger
+            upd_cluster = new_whole_cluster(cluster_totals,slice_data_updated,i.Cluster,threshold_dict,turf_size,missing_clusters)
+            if upd_cluster:
+                #If there's a merger update the cluster column on the list of addresses
+                slice_data_updated.loc[(slice_data_updated.Cluster == i.Cluster) ,"Cluster"] = upd_cluster
+                #Updated the list of merged clusters so we don't try to merge with a cluster that already merged
+                missing_clusters.append(i.Cluster)
+                missing_clusters.append(upd_cluster)
+    
 
 
     #re-order clusters by distance
@@ -154,7 +189,7 @@ def output_turfs(form):
 
     #Remove clusters that are too small
     for i in cluster_totals.itertuples():
-        min_size = 1.2 * turf_size - (.3 * turf_size * i.walking_distance)
+        min_size = .45 * turf_size
         if i.doors < (min_size):
             slice_data_updated.loc[slice_data_updated["Cluster"]==i.Cluster,"Cluster"] = -1
 
@@ -165,7 +200,7 @@ def output_turfs(form):
     cluster_totals = get_cluster_totals(slice_data_updated)
     
     #Write list of addresses to file
-    slice_data_updated.to_excel(folder_name + "/Cluster_data.xlsx")
+    slice_data_updated.to_excel(folder_name + "/temp_folder/Cluster_data.xlsx")
     #Write list of turfs to file
     cluster_totals.to_excel(folder_name + "/Cluster_totals.xlsx")
     
@@ -175,7 +210,7 @@ def output_turfs(form):
 
 
     #Read cluster data
-    data = pd.read_excel(folder_name + "/Cluster_data.xlsx")
+    data = pd.read_excel(folder_name + "/temp_folder/Cluster_data.xlsx")
 
     #Create a PDF file
     pdf = FPDF()
@@ -242,10 +277,15 @@ def output_turfs(form):
     for i in data.itertuples():
         write_assign_sheet(pdf,i,turf_size)
 
+    print 'assigned sheets'
+
     pdf.output(folder_name + '/temp_folder/Assign_sheet.pdf', 'F')
+    print 'saved file'
 
     #Email 3 pdfs to email address specified
     send_email(email,folder_name)
+    print 'sent email'
 
     #Delete the temp folder
     shutil.rmtree(folder_name)
+    print 'deleted file'

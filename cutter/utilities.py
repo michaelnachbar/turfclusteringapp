@@ -5,6 +5,9 @@ import geocoder
 import gmplot
 import numpy as np
 import csv
+from collections import Counter
+from operator import itemgetter
+
 
 from fpdf import FPDF
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
@@ -200,8 +203,8 @@ def update_thresholds(slice_data):
         #Google gives us 1500 checks per day
         #If we run through them move on
         #And send a message saying to run again tomorrow
-        if num_geocodes > 1500:
-            return False
+        #if num_geocodes > 1500:
+            #return False
     return True
     
 
@@ -229,7 +232,7 @@ def update_slice_data_avgs(slice_data):
 def update_slice_data_clusters(slice_data_updated,num_clusters):
     fit_data = slice_data_updated.loc[:,("LAT","LON","street_lat","street_lon")]
     #Use the kmeans algorithm to cluster each address into the specified # of clusters
-    kmeans = KMeans(n_clusters=num_clusters, random_state=0).fit(fit_data)
+    kmeans = KMeans(n_clusters=num_clusters).fit(fit_data)
     slice_data_updated['Cluster'] = kmeans.labels_
     return slice_data_updated
 
@@ -364,6 +367,11 @@ def check_bad_streets(slice_data_updated,threshold_dict):
         #If it returns, update the street to put those addresses in a new cluster
         if upd_cluster:
             slice_data_updated.loc[(slice_data_updated.STREET==bad_street) & (slice_data_updated.Cluster == -1),"Cluster"] = upd_cluster
+        else:
+            num_doors = sum(slice_data_updated.loc[(slice_data_updated.STREET==bad_street) & (slice_data_updated.Cluster == -1),"doors"])
+            if num_doors > 40:
+                max_cluster = max(slice_data_updated["Cluster"])
+                slice_data_updated.loc[(slice_data_updated.STREET==bad_street) & (slice_data_updated.Cluster == -1),"Cluster"] = max_cluster + 1
     return slice_data_updated
 
 
@@ -452,20 +460,27 @@ def get_cluster_totals(slice_data_updated):
 #df = total datat
 #cluster = the # of the cluster we're splitting
 #splits - is the number of splits (right now we're only doing 2)
-def split_cluster(df,cluster,splits):
+def split_cluster(df,cluster,splits,min_size=60):
     #Make a copy so we don't endit it
     df = df.copy()
     #Filter for the addresses in the specified cluster
-    filt_data = df.loc[df["Cluster"]==cluster,("LAT","LON","street_lat","street_lon","Cluster","doors")].copy()
+    filt_data = df.loc[df["Cluster"]==cluster,("LAT","LON","street_lat","street_lon","Cluster")].copy()
     
     #if not check_split(filt_data):
     #    return df
     #Get the highest numbered cluster
     max_cluster = max(df["Cluster"])
-    #Use kmeans to split the cluster
-    kmeans = KMeans(n_clusters=splits, random_state=10).fit(filt_data)
+    split_counts = []
+    for i in range(5):
+        #Use kmeans to split the cluster
+        kmeans = KMeans(n_clusters=splits,init='random').fit(filt_data)
+        counter = Counter(kmeans.labels_)
+        small_cluster_size = min(counter[0],counter[1])
+        split_counts.append([small_cluster_size,kmeans.labels_])
+    labels = max(split_counts,key=itemgetter(0))[1]
     #Add the column label depending on where k-means put it
-    filt_data["label"] = kmeans.labels_
+    filt_data["label"] = labels
+    #print filt_data
     #Make the new clusters created by kmeans into new clusters
     for i in range(1,splits):
         filt_data.loc[filt_data["label"]==i,"Cluster"] = max_cluster + i
@@ -530,7 +545,7 @@ def new_whole_cluster(cluster_totals,slice_data_updated,cluster,threshold_dict,t
         walking_distance = walking_distance.iloc[0]
 
         #Use the formula to find the max numbers of doors in a cluster
-        max_doors = 2.4 * turf_size - 30 * walking_distance - 30 * cluster_walking_distance
+        max_doors = 2.0 * turf_size - 25 * walking_distance - 25 * cluster_walking_distance
         #If merging these 2 clusters if over the max # of doors we can't merge
         if df_doors + cluster_doors >= max_doors:
             continue
@@ -608,8 +623,8 @@ def get_street_list(df):
 #We are opening it in a browser and taking a screenshot
 #So if there's a better way that is preferable
 def make_img_file(cluster,folder):
-    display = Display(visible=0, size=(800, 800))  
-    display.start()
+    #display = Display(visible=0, size=(800, 800))  
+    #display.start()
     #Have a virtual Chrome driver open the html file
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument('headless')
@@ -705,7 +720,7 @@ def write_address(pdf,row,cluster,row_count):
     for i in range(row_count,row_count + print_doors):
         #Print 2 rows for each door
         #And when we're done a page make a new page
-        if row_count > 0 and row_count % 20 == 0:
+        if row_count > 0 and row_count % 17 == 0:
             pdf = new_page(pdf,cluster,cont=True)
         write_address_rows(pdf,address)
         row_count += 1
@@ -739,11 +754,8 @@ def write_assign_sheet(pdf,row,turf_size):
     pdf.ln(th)
     pdf.cell(1.75, th, "Team Captain", border=1)
     pdf.cell(1.75, th, "Team Member 2", border=1)
-    print row
-    print turf_size
-    print row.doors > 1.6 * turf_size - 30 * row.walking_distance
     #Depending on turf size and walking distance assign a team 2 members or 4 members
-    if row.doors > 1.6 * turf_size - 30 * row.walking_distance:
+    if row.doors > 1.2 * turf_size - 20 * row.walking_distance:
         pdf.cell(1.75, th, "Team Member 3", border=1)
         pdf.cell(1.75, th, "Team Member 4", border=1)
     pdf.ln(th)
