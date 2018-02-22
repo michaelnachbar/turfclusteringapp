@@ -7,6 +7,13 @@ import numpy as np
 import csv
 from collections import Counter
 from operator import itemgetter
+import MySQLdb
+from scipy.spatial import distance
+
+
+from django.conf import settings
+from django.db.models import Max
+from cutter.models import voter_json, region
 
 
 from fpdf import FPDF
@@ -18,6 +25,10 @@ import time
 import zipfile
 import smtplib
 import email
+import json
+import re
+import pymysql
+import sqlalchemy
 
 import httplib2
 
@@ -105,14 +116,16 @@ def get_coordinates(address,check_intersect=True):
 #Do it for both - so if 12th Street and Walnut Street intersect
 #threshold_dict['12th Street']['Walnut Street'] will be an entry
 #As will threshold_dict['Walnut Street']['12th Street']
-def load_threshold_dict(lon_only=False):
-    intersect_data = pd.read_csv("Intersections_1.csv")
+def load_threshold_dict(region,lon_only=False):
+    #intersect_data = pd.read_csv("Intersections_1.csv")
+    intersect_data = read_mysql_data("""SELECT * from canvas_cutting.cutter_intersections where lat <> 0 and
+         region = '{region}'""".format(region = region))
     if lon_only:
-        intersect_data = intersect_data[intersect_data["Lon"].notnull()]
+        intersect_data = intersect_data[intersect_data["lon"].notnull()]
     threshold_dict = {}
     for row in intersect_data.itertuples():
-        s1 = row.STREET1
-        s2 = row.STREET2
+        s1 = row.street1
+        s2 = row.street2
         if not s1 in threshold_dict:
             threshold_dict[s1] = {}
         threshold_dict[s1][s2] = None
@@ -123,9 +136,9 @@ def load_threshold_dict(lon_only=False):
 
 
 #Take a list of data and get a list of all potential intersections
-def get_potential_intersections(slice_data,km_threshold = .1,lat_threshold=.0008):
+def get_potential_intersections(slice_data,region,km_threshold = .1,lat_threshold=.0008):
     #Load the list of already checked intersections
-    threshold_dict = load_threshold_dict()
+    threshold_dict = load_threshold_dict(region)
     threshold_list = {}
 
     #Scroll through all through potential combinations of addresses
@@ -174,17 +187,31 @@ def write_row(row,new_file=False):
     writer.writerow(row)
     f.close()
 
+def write_row(row,region):
+    i = intersection()
+    i.region = region
+    i.street1 = row[0]
+    i.street2 = row[1]
+    i.distance = row[2]
+    if row[3]:
+        i.lat = row[3]
+        i.lon = row[4]
+    else:
+        i.lat = 0
+        i.lon = 0
+    i.save()
+
 
 #Check the thresholds for a list of addresses
-def update_thresholds(slice_data):
+def update_thresholds(slice_data,region):
     #Get the list of all potential intersections
-    potential_intersections = get_potential_intersections(slice_data)
+    potential_intersections = get_potential_intersections(slice_data,region)
     num_geocodes=0
     err_count = 0
     #Scroll through the list of potential intersections
     for (i,j),k in potential_intersections.iteritems():
         num_geocodes+=1
-        address = i + " and " + j +", Austin, TX"
+        address = i + " and " + j +", " + region
         #Check Google's geocoder to see if it's a valid intersection
         #e.g. if we're checking 12th Street and Walnut Street
         #Check the coordinates of 12th Street & Walnut Street, Austin, TX
@@ -199,7 +226,7 @@ def update_thresholds(slice_data):
             if err_count >7:
                 return False
         #Write the result of the check to the master list of intersections
-        write_row([i,j,k] + coords)
+        write_row([i,j,k] + coords,region)
         #Google gives us 1500 checks per day
         #If we run through them move on
         #And send a message saying to run again tomorrow
@@ -795,6 +822,7 @@ def send_smtp_email(to,address,subject,body,pw,attach=None):
     msg['From'] = address
     msg['To'] = to
     msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
     if attach:
         attachments = [attach]
         for filename in attachments:
@@ -815,9 +843,187 @@ def send_email(to,folder_path):
     zip_folder(folder_path)
     send_smtp_email(to,"turfclusteringapp@gmail.com","Here are your turfs","Here's some stuff","bagelsandwiches",attach=folder_path + '/temp_email.zip')
 
+def send_file_email(to,file_path,email_text):
+    send_smtp_email(to,"turfclusteringapp@gmail.com","Here is your file",email_text,"bagelsandwiches",attach=file_path)
+
 
 #Send an error email if a process fails
 def send_error_email(to):
     send_smtp_email(to,"turfclusteringapp@gmail.com","Error making your turfs","We were not able to generate your turfs. Unfortunately we hit the API limit checking addresses to make your turfs. Please run again in 24 hours.","bagelsandwiches")
 
 
+def make_json_columns(df,stand_alone_columns,json_columns):
+    df = df.copy()
+    df['json_col'] = df[json_columns].apply(lambda x: x.to_json(), axis=1)
+    print 'added json'
+    df = df.loc[:,stand_alone_columns + ('json_col')]
+    return df
+
+def make_mysql_connection(skip_db = False):
+    user = settings.DATABASES['default']['USER']
+    password = settings.DATABASES['default']['PASSWORD']
+    database_name = settings.DATABASES['default']['NAME']
+    if skip_db:
+        return MySQLdb.connect(user=user,password=password)
+    return MySQLdb.connect(user=user,password=password,database_name=database_name)
+
+def make_sqlalchemy_connection():
+    user = settings.DATABASES['default']['USER']
+    password = settings.DATABASES['default']['PASSWORD']
+    return sqlalchemy.create_engine('mysql+pymysql://root:wazzup@localhost:3306/canvas_cutting')
+
+def execute_mysql(statement):
+    conn = make_mysql_connection(True)
+    c=conn.cursor()
+    c.execute(statement)
+
+def simple_query(query):
+    conn = make_mysql_connection(True)
+    c=conn.cursor()
+    c.execute(query)
+    return c.fetchall()
+
+def write_mysql_data(df,table_name,region,if_exists='append',better_append=False):
+    df["region"] = region
+    con = make_sqlalchemy_connection()
+    if not better_append:
+        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False)
+    else:
+        max_id = read_mysql_data("SELECT MAX(id) FROM {table_name}".format(table_name=table_name))
+        id_range = range(max_id+1,max_id + len(df) + 1)
+        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,index_label=id_range) 
+
+def read_mysql_data(query):
+    con = make_sqlalchemy_connection()
+    return pd.read_sql(query,con)
+
+def write_json_data(df,json_columns,region):
+    print 'starting function'
+    for i in df.itertuples(er):
+        try:
+            vj = voter_json()
+            vj.region = region
+            vj.address = i.address
+            temp_dict = {j: getattr(i,j) for j in json_columns}
+            vj.json_data = json.dumps(temp_dict)
+            vj.save()
+        except Exception as e:
+            print e
+            print i
+            1/0
+            #continue
+
+def cutoff(address,fin):
+    f = address.find(fin)
+    if f > -1:
+        return address[:f]
+    else:
+        return address
+
+def clean_dataframe(df):
+    df["address"] = df.apply(clean_address,axis=1)
+    return df
+
+def clean_address(row):
+    address = str(row.address)
+    ret = address.upper()
+    ret = ret.replace("DR.","DR")
+    ret = ret.replace("DRIVE","DR")
+    cutoffs = [",",", APT"," APT"," #", ", #"]
+    for i in cutoffs:
+        ret = cutoff(ret,i)
+    return ret
+
+def update_address(address,data,points,region):
+    coords = get_coordinates(str(address) + ", " + region,False)
+    print coords
+    print points
+    ind = np.argpartition(distance.cdist([coords],points),4)
+    data = data.reset_index()
+    ret = [data.loc[ind[0][i],"address"] for i in range(4)]
+    return ret
+
+
+def iterate_merge(geocode_data,new_addresses,address_function,filename = None,**kwargs):
+    new_addresses = address_function(new_addresses,**kwargs)
+    merge_data = new_addresses.merge(geocode_data,on="address",how="left")
+    good_data = merge_data[pd.notnull(merge_data["LAT"])]
+    bad_data = merge_data[pd.isnull(merge_data["LAT"])]
+    merge_perc = 1.0*len(good_data)/len(merge_data)
+    good_data_merging = good_data.loc[:,new_addresses.columns]
+    geo_merge_data = geocode_data.merge(good_data_merging,on="address",how="left")
+    bad_geo_data = geo_merge_data[pd.isnull(geo_merge_data["full_street"])]
+    bad_street_count = bad_data.groupby("full_street")["address"].agg(len)
+    bad_street_count = bad_street_count.reset_index()
+    worst_streets = bad_street_count.sort_values("address",ascending=False).iloc[:100,:]
+    bad_geo_street_count = bad_geo_data.groupby("STREET")["address"].agg(len)
+    bad_geo_street_count = bad_geo_street_count.reset_index()
+    worst_geo_streets = bad_geo_street_count.sort_values("address",ascending=False).iloc[:100,:]
+    output = pd.concat([worst_streets.reset_index(drop=True), bad_geo_street_count.reset_index(drop=True)], axis=1)
+    output.columns = ["new_street","num missing","geocode_street","num_missing"]
+    ret = {}
+    ret["good_data"] = good_data
+    ret["bad_data"] =bad_data.loc[:,new_addresses.columns]
+    ret["bad_geo_data"] = bad_geo_data.loc[:,geocode_data.columns]
+    ret["bad_full_geo_data"] = bad_geo_data
+    ret["merge_perc"] = merge_perc
+    if filename:
+        output.to_excel(filename)
+    return ret
+
+def address_head(row):
+    address = str(row.address)
+    ind = address.find(" ")
+    ret = address[:ind]
+    return re.sub("[^0-9]", "", ret)
+
+
+def get_street_change_recs(df,**kwargs):
+    ret = []
+    geocode_data = kwargs["geocode_data"]
+    region = kwargs["region"]
+    df["address_head"] = df.apply(address_head,axis=1)
+    df["update"] = 0
+    points = np.array(geocode_data.loc[:,("LAT","LON")])
+    unique_tails = df["full_street"].unique()
+    
+    for i in unique_tails:
+        filt_data = df.loc[df["full_street"]==i,:]
+        break_point = False
+        for j in filt_data.itertuples():
+            test_addresses = update_address(j.address,geocode_data,points,region)
+            for k in test_addresses:
+                ind = k.find(" ")
+                if k[:ind] == j.address_head:
+                    print j.full_street,k[ind+1:]
+                    ret.append([j.full_street,k[ind+1:]])
+                    break_point = True
+                    break
+            if break_point:
+                break
+    return ret
+
+def get_coverage_ratio():
+    good_data = simple_query("SELECT COUNT(*) FROM canvas_cutting.cutter_canvas_data where full_street <> ''")[0][0]
+    print good_data
+    bad_data = simple_query("SELECT COUNT(*) FROM canvas_cutting.cutter_bad_data")[0][0]
+    print bad_data
+    return 1.0 * good_data / (good_data + bad_data)
+
+
+def add_new_region(region_name):
+    query_check = region.objects.filter(name = region_name)
+    if query_check:
+        return False
+    region.objects.create(name=region_name)
+    return True
+
+
+def replace_list(df,**kwargs):
+    filename = kwargs['replace_file']
+    combos = pd.read_csv(filename)
+    combos.columns = ['old_address','new_address']
+    for row in combos.itertuples():
+        df.loc[df["full_street"]==row.old_address,"address"] = \
+            df.loc[df["full_street"]==row.old_address,"address"].apply(lambda s: s.replace(row.old_address,row.new_address))
+    return df

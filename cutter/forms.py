@@ -1,8 +1,15 @@
 from django import forms
 
+from cutter.models import region
+
+def get_regions():
+    return [(j.name,j.name) for i,j in enumerate(region.objects.all())]
+
 class CutterForm(forms.Form):
-    center_address = forms.CharField(max_length=50,required=True,help_text="Be sure to include city and state")
-    email = forms.EmailField(max_length=254,required=True)
+    center_address = forms.CharField(max_length=50,required=True)
+    regions = get_regions()
+    region_name = forms.ChoiceField(choices=regions)
+    email = forms.CharField(max_length=50,required=True)
     turf_count = forms.IntegerField(required=True)
     turf_size = forms.IntegerField(required=True)
 
@@ -16,3 +23,24 @@ class CutterForm(forms.Form):
         if not email:
             raise forms.ValidationError('You have to write something!')"""
 
+
+
+class NewRegionForm(forms.Form):
+    region_name = forms.CharField(max_length=50,required=True)
+    email = forms.EmailField(max_length=254,required=True)
+    open_addresses_io_file = forms.FileField(required=False)
+    voter_file = forms.FileField(required=False)
+
+def get_regions():
+    return [(j.name,j.name) for i,j in enumerate(region.objects.all())]
+
+class UpdateRegionForm(forms.Form):
+    regions = get_regions()
+    region_name = forms.ChoiceField(choices=regions)
+    email = forms.EmailField(max_length=254,required=True)
+    update_file = forms.FileField(required=False)
+
+    def __init__(self, *args, **kwargs):
+        super(UpdateRegionForm, self).__init__(*args, **kwargs)
+        self.fields['region_name'] = forms.ChoiceField(
+            choices=get_regions() )

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/1.9/ref/settings/
 """
 
 import os
+from local_settings import *
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'canvas_cutting',
+    'cutter',
 ]
 
 MIDDLEWARE_CLASSES = [
@@ -75,12 +77,6 @@ WSGI_APPLICATION = 'canvas_cutting.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/1.9/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
-    }
-}
 
 
 # Password validation
@@ -121,6 +117,22 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-
 CELERY_BROKER_URL = 'amqp://localhost'
+
+
+#CELERY_BROKER_URL = 'amqp://172.19.0.2'
+
+#RABBIT_HOSTNAME = os.environ.get('RABBIT_PORT_5672_TCP', 'rabbit')
+
+#if RABBIT_HOSTNAME.startswith('tcp://'):  
+    #RABBIT_HOSTNAME = RABBIT_HOSTNAME.split('//')[1]
+
+#CELERY_BROKER_URL = os.environ.get('BROKER_URL',  
+#                            '')
+#if not CELERY_BROKER_URL:  
+#    CELERY_BROKER_URL = 'amqp://{user}:{password}@{hostname}/{vhost}/'.format(
+#        user=os.environ.get('RABBIT_ENV_USER', 'admin'),
+#        password=os.environ.get('RABBIT_ENV_RABBITMQ_PASS', 'mypass'),
+#        hostname=RABBIT_HOSTNAME,
+#        vhost=os.environ.get('RABBIT_ENV_VHOST', ''))
 

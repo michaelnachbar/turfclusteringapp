@@ -3,6 +3,7 @@ import string
 from django.contrib.auth.models import User
 from django.utils.crypto import get_random_string
 
+
 from celery import shared_task
 
 import pandas as pd
@@ -18,7 +19,8 @@ from pyvirtualdisplay import Display
 from utilities import make_filtered_file, update_thresholds, load_threshold_dict, update_slice_data_nulls, update_slice_data_avgs,\
 update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets, get_cluster_totals, update_cluster_numbers,\
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
-write_assign_sheet, send_email, send_error_email
+write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
+write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list
 
 
 @shared_task
@@ -26,7 +28,9 @@ def output_turfs(form):
     #Get the parameters from the Django form
     num_clusters = form['turf_count']
     turf_size = form['turf_size']
-    center_address = form['center_address']
+    
+    region = form['region_name']
+    center_address = form['center_address'] + " " + region
     email = form['email']
 
     #send_error_email(email)
@@ -39,8 +43,9 @@ def output_turfs(form):
     
     #Updated data is the master list of addresses and # of registered voters
     #Will replace with an actual database in a future update
-    data = pd.read_excel("Updated_data.xlsx")
-    #data = pd.read_excel("Precinct_data.xlsx")
+    #data = pd.read_excel("Updated_data.xlsx")
+    #data = pd.read_excel("District_7_data.xlsx")
+    data = read_mysql_data("SELECT * FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
 
 
     #Based on turf size and central point take the X closest addresses
@@ -60,13 +65,13 @@ def output_turfs(form):
     #Format of file is:
     #12th Street, River Street, TRUE
     #12th Street, 13th Street, FALSE
-    intersect_data = pd.read_csv("Intersections_1.csv")
+    #intersect_data = pd.read_csv("Intersections_1.csv")
 
 
 
     #Look at the list of streets and find the intersections
     #This is used to ensure that we make continuous routes
-    u = update_thresholds(slice_data)
+    u = update_thresholds(slice_data,region)
     if not u:
         print 'Still need to collect more addresses'
         send_error_email(email)
@@ -74,7 +79,7 @@ def output_turfs(form):
 
 
     #Load this list of intersections
-    threshold_dict = load_threshold_dict(True)
+    threshold_dict = load_threshold_dict(region,True)
 
 
 
@@ -289,3 +294,118 @@ def output_turfs(form):
     #Delete the temp folder
     shutil.rmtree(folder_name)
     print 'deleted file'
+
+@shared_task
+def add_region(form):
+    region = form['region_name']
+    email = form['email']
+
+    
+    add_new_region(region)
+    
+    #Read list of registered voters 
+    voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region))
+
+
+
+    voter_data.loc[:,("BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
+        voter_data.loc[:,("BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
+
+    #Create address columns for voter data
+    voter_data["address"] = voter_data["BLKNUM"].map(str) + \
+        " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+    voter_data["address"] = voter_data["address"].str.strip()
+    voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
+        " " + voter_data["UNITNO"].map(str)
+    voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+    voter_data["full_street"] = voter_data["full_street"].str.strip()
+
+    
+    print "Writing JSON Data"
+    #write_json_data(voter_data,\
+    #    voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
+    #    region)
+    print "JSON Data Written"
+
+    
+
+    #Cut voter data down to needed columns
+    new_data = voter_data.loc[:,("address","address_exp","full_street")]
+    new_data = new_data.fillna("")
+
+    voter_data = None
+
+    #Read Geocoded List of Addresses
+    geocode_data = pd.read_csv('temp_geocode_file_{region}.csv'.format(region=region))
+
+    #Create address column for geocoded data and cut down to needed columns
+    geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
+    geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
+    geocode_data = geocode_data.reset_index()
+
+    #Make a pivot of #of registered doors and registered voters per street address
+    f = {"address_exp": 'nunique', "address_exp": 'count'}
+    new_addresses = new_data.groupby(["address","full_street"])["address_exp"].agg(['count','nunique'])
+    new_addresses = new_addresses.reset_index()
+    new_addresses.columns = ['address',"full_street",'voters','doors']
+    new_addresses["orig_address"] = new_addresses["address"]
+
+    new_data=None
+
+    results_dict = iterate_merge(geocode_data,new_addresses,clean_dataframe)
+
+    write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region)
+    combo_data = results_dict['good_data'].append(results_dict['bad_full_geo_data'],ignore_index=True)
+    print len(results_dict['good_data'])
+    print len(results_dict['bad_full_geo_data'])
+    print len(combo_data)
+    combo_data.loc[:,("doors","voters")] = combo_data.loc[:,("doors","voters")].fillna(0)
+    combo_data.loc[:,("full_street","orig_address")] = combo_data.loc[:,("full_street","orig_address")].fillna("")
+    write_mysql_data(combo_data,'cutter_canvas_data',region)
+
+    
+
+    
+    print "Getting Recs"
+    street_change_recs = get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
+    pd.DataFrame(street_change_recs).to_excel("Change_recs.xlsx")
+    
+    x = str(get_coverage_ratio())
+    
+    send_file_email(email,"Change_recs.xlsx",x)
+    os.remove("Change_recs.xlsx")
+    
+  
+
+@shared_task
+def region_update(form):
+    orig_ratio = get_coverage_ratio()
+    email = form['email']  
+    region = form['region_name']
+    bad_data = read_mysql_data("SELECT * FROM canvas_cutting.cutter_bad_data where region = '{region}'".format(region=region))
+    bad_geo_data = read_mysql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM canvas_cutting.cutter_canvas_data where full_street = ""
+        and region = '{region}'""".format(region=region))
+
+    print len(bad_data)
+    print len(bad_geo_data)
+    results_dict = iterate_merge(bad_geo_data,bad_data,replace_list,filename="top100.xlsx",replace_file = 'temp_update_file_{region}.csv'.format(region=region))
+
+    print len(results_dict['good_data'])
+
+    results_dict['bad_full_geo_data'].loc[:,("doors","voters")] = results_dict['bad_full_geo_data'].loc[:,("doors","voters")].fillna(0)
+    results_dict['bad_full_geo_data'].loc[:,("full_street","orig_address")] = results_dict['bad_full_geo_data'].loc[:,("full_street","orig_address")].fillna("")
+    write_mysql_data(results_dict['bad_full_geo_data'],'cutter_bad_geo_data_failsafe',region)
+    write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region,'replace')
+
+    write_mysql_data(results_dict['good_data'],'cutter_canvas_data',region)    
+    
+    
+    
+    execute_mysql("DELETE FROM canvas_cutting.cutter_canvas_data WHERE full_street = '' and region = '{region}'".format(region=region))
+    write_mysql_data(results_dict['bad_full_geo_data'],'cutter_canvas_data',region)
+    execute_mysql("DELETE FROM canvas_cutting.cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
+
+    new_ratio = get_coverage_ratio()
+    email_text = "Thank you for your corrections. They took us from {perc1}% of all registered voters geocoded to {perc2}% of all registered voters geocoded. Attached is a list of some of the streets missing coverage.".format(perc1=orig_ratio,perc2=new_ratio)
+    send_file_email(email,"top100.xlsx",email_text)
+    os.remove("top100.xlsx")
