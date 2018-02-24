@@ -860,7 +860,7 @@ def send_error_email(to):
 
 #Send an error email if a process fails
 def send_error_report(to,e):
-    send_smtp_email(to + ",michael.l.nachbar@gmail.com","turfclusteringapp@gmail.com","Error making your turfs","Sorry your report hit an error. Info is below. For questions reach out to michael.l.nachbar@gmail.com" + "\n" + "\n" + e,"bagelsandwiches")
+    send_smtp_email(to + ",michael.l.nachbar@gmail.com","turfclusteringapp@gmail.com","Error making your turfs","Sorry your report hit an error. Info is below. For questions reach out to michael.l.nachbar@gmail.com" + "\n" + "\n" + str(e),"bagelsandwiches")
 
 
 def make_json_columns(df,stand_alone_columns,json_columns):
