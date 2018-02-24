@@ -21,4 +21,6 @@ from cutter.views import cutter
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^cutter/', 'cutter.views.cutter'),
+    url(r'^newregion/', 'cutter.views.new_region'),
+    url(r'^updateregion/', 'cutter.views.update_region'),
 ]

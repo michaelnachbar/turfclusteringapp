@@ -1,0 +1,22 @@
+{% if messages %}
+<ul class="messages">
+    {% for message in messages %}
+    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<h1>Upload New City Data</h1>
+<body>This is an app for generating turfs for canvasses for Medicare for All and other DSA efforts. Type in the center address, the number of turfs you want, and the approximate number of doors per each turf. The app will email you some PDFs you can print out and use. Right now the app only works for Austin, Texas but we are looking to add new cities. It is still a work in progress, so if you have any feedback or would like to work on the Github please email Michael.L.Nachbar@gmail.com. Let's seize the means!
+</body>
+
+<form action="/newregion/" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p}}
+<select name="update_region">
+    {% for year in form.region_name.field.choices %}
+    <option value="{{ region }}">{{ region }}</option>
+    {% endfor %}
+</select>
+    <input type="submit" value="Submit" />
+</form>
