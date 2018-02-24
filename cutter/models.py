@@ -8,6 +8,14 @@ from django_mysql.models import JSONField
 class region(models.Model):
     name = models.CharField(max_length=100)
 
+class region_progress(models.Model):
+    name = models.CharField(max_length=100)
+    voter_json_complete = models.BooleanField(default=False)
+    bad_data_complete = models.BooleanField(default=False)
+    canvas_data_complete = models.BooleanField(default=False)
+    bad_geo_failsafe_data = models.BooleanField(default=False)
+    last_street = models.CharField(max_length=100)
+
 
 class voter_json(models.Model):
     region = models.CharField(max_length=100)

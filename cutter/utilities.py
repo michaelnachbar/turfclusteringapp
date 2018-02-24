@@ -11,9 +11,16 @@ import MySQLdb
 from scipy.spatial import distance
 
 
+import csv
+
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool 
+
+
+
 from django.conf import settings
 from django.db.models import Max
-from cutter.models import voter_json, region
+from cutter.models import voter_json, region, intersections, region_progress
 
 
 from fpdf import FPDF
@@ -188,12 +195,12 @@ def write_row(row,new_file=False):
     f.close()
 
 def write_row(row,region):
-    i = intersection()
+    i = intersections()
     i.region = region
     i.street1 = row[0]
     i.street2 = row[1]
     i.distance = row[2]
-    if row[3]:
+    if len(row) > 3:
         i.lat = row[3]
         i.lon = row[4]
     else:
@@ -899,7 +906,7 @@ def read_mysql_data(query):
 
 def write_json_data(df,json_columns,region):
     print 'starting function'
-    for i in df.itertuples(er):
+    for i in df.itertuples():
         try:
             vj = voter_json()
             vj.region = region
@@ -935,13 +942,14 @@ def clean_address(row):
     return ret
 
 def update_address(address,data,points,region):
-    coords = get_coordinates(str(address) + ", " + region,False)
-    print coords
-    print points
-    ind = np.argpartition(distance.cdist([coords],points),4)
-    data = data.reset_index()
-    ret = [data.loc[ind[0][i],"address"] for i in range(4)]
-    return ret
+    try:
+        coords = get_coordinates(str(address) + ", " + region,False)
+        ind = np.argpartition(distance.cdist([coords],points),4)
+        data = data.reset_index()
+        ret = [data.loc[ind[0][i],"address"] for i in range(4)]
+        return ret
+    except:
+        return address
 
 
 def iterate_merge(geocode_data,new_addresses,address_function,filename = None,**kwargs):
@@ -959,7 +967,9 @@ def iterate_merge(geocode_data,new_addresses,address_function,filename = None,**
     bad_geo_street_count = bad_geo_data.groupby("STREET")["address"].agg(len)
     bad_geo_street_count = bad_geo_street_count.reset_index()
     worst_geo_streets = bad_geo_street_count.sort_values("address",ascending=False).iloc[:100,:]
-    output = pd.concat([worst_streets.reset_index(drop=True), bad_geo_street_count.reset_index(drop=True)], axis=1)
+    #output = pd.concat([worst_streets.reset_index(drop=True), bad_geo_street_count.reset_index(drop=True)], axis=1)
+    #output.columns = ["new_street","num missing","geocode_street","num_missing"]
+    output = pd.concat([worst_streets.reset_index(drop=True), bad_geo_street_count.reset_index(drop=True)], axis=1,ignore_index=True)
     output.columns = ["new_street","num missing","geocode_street","num_missing"]
     ret = {}
     ret["good_data"] = good_data
@@ -985,7 +995,7 @@ def get_street_change_recs(df,**kwargs):
     df["address_head"] = df.apply(address_head,axis=1)
     df["update"] = 0
     points = np.array(geocode_data.loc[:,("LAT","LON")])
-    unique_tails = df["full_street"].unique()
+    unique_tails = sorted(df["full_street"].unique())
     
     for i in unique_tails:
         filt_data = df.loc[df["full_street"]==i,:]
@@ -1003,10 +1013,49 @@ def get_street_change_recs(df,**kwargs):
                 break
     return ret
 
-def get_coverage_ratio():
-    good_data = simple_query("SELECT COUNT(*) FROM canvas_cutting.cutter_canvas_data where full_street <> ''")[0][0]
+def write_csv(filename,row):
+    f = open(filename,'ab')
+    csvw = csv.writer(f)
+    csvw.writerow(row)
+    f.close()
+
+
+def check_tail(tail,df,geocode_data,points,region):
+    filt_data = df.loc[df["full_street"]==tail,:]
+    break_point = False
+    for j in filt_data.itertuples():
+        test_addresses = update_address(j.address,geocode_data,points,region)
+        for k in test_addresses:
+            ind = k.find(" ")
+            if k[:ind] == j.address_head:
+                write_csv("Change_recs_{region}.csv".format(region=region),[j.full_street,k[ind+1:]])
+                #ret.append([j.full_street,k[ind+1:]])
+                break_point = True
+                break
+        if break_point:
+            break
+
+
+def check_tail_wrapper(args):
+    return check_tail(*args)
+
+def get_street_change_recs(df,**kwargs):
+    ret = []
+    geocode_data = kwargs["geocode_data"]
+    region = kwargs["region"]
+    df["address_head"] = df.apply(address_head,axis=1)
+    df["update"] = 0
+    points = np.array(geocode_data.loc[:,("LAT","LON")])
+    unique_tails = sorted(df["full_street"].unique())
+    tail_tuples = [(i,df,geocode_data,points,region) for i in unique_tails]
+    pool = ThreadPool(2)
+    pool.map(check_tail_wrapper,tail_tuples)
+
+def get_coverage_ratio(region):
+    good_data = simple_query("""SELECT COUNT(*) FROM canvas_cutting.cutter_canvas_data where region = '{region}' and 
+         full_street <> ''""".format(region=region))[0][0]
     print good_data
-    bad_data = simple_query("SELECT COUNT(*) FROM canvas_cutting.cutter_bad_data")[0][0]
+    bad_data = simple_query("""SELECT COUNT(*) FROM canvas_cutting.cutter_bad_data where region = '{region}'""".format(region=region))[0][0]
     print bad_data
     return 1.0 * good_data / (good_data + bad_data)
 
@@ -1016,6 +1065,7 @@ def add_new_region(region_name):
     if query_check:
         return False
     region.objects.create(name=region_name)
+    region_progress.objects.create(name=region_name)
     return True
 
 

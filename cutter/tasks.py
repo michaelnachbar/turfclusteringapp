@@ -22,6 +22,8 @@ split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_im
 write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
 write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list
 
+from cutter.models import region_progress
+
 
 @shared_task
 def output_turfs(form):
@@ -297,11 +299,13 @@ def output_turfs(form):
 
 @shared_task
 def add_region(form):
+    
     region = form['region_name']
     email = form['email']
 
     
     add_new_region(region)
+    progress = region_progress.objects.get(name=region) 
     
     #Read list of registered voters 
     voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region))
@@ -320,12 +324,12 @@ def add_region(form):
     voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
     voter_data["full_street"] = voter_data["full_street"].str.strip()
 
-    
-    print "Writing JSON Data"
-    #write_json_data(voter_data,\
-    #    voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
-    #    region)
-    print "JSON Data Written"
+    if not progress.voter_json_complete:
+        print "Writing JSON Data"
+        write_json_data(voter_data,\
+            voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
+            region)
+        print "JSON Data Written"
 
     
 
@@ -353,35 +357,41 @@ def add_region(form):
     new_data=None
 
     results_dict = iterate_merge(geocode_data,new_addresses,clean_dataframe)
-
-    write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region)
-    combo_data = results_dict['good_data'].append(results_dict['bad_full_geo_data'],ignore_index=True)
-    print len(results_dict['good_data'])
-    print len(results_dict['bad_full_geo_data'])
-    print len(combo_data)
-    combo_data.loc[:,("doors","voters")] = combo_data.loc[:,("doors","voters")].fillna(0)
-    combo_data.loc[:,("full_street","orig_address")] = combo_data.loc[:,("full_street","orig_address")].fillna("")
-    write_mysql_data(combo_data,'cutter_canvas_data',region)
+ 
+    if not progress.bad_data_complete:
+        write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region)
+        progress.bad_data_complete = True
+    if not progress.canvas_data_complete:
+        combo_data = results_dict['good_data'].append(results_dict['bad_full_geo_data'],ignore_index=True)
+        print len(results_dict['good_data'])
+        print len(results_dict['bad_full_geo_data'])
+        print len(combo_data)
+        combo_data.loc[:,("doors","voters","NUMBER")] = combo_data.loc[:,("doors","voters","NUMBER")].fillna(0)
+        combo_data.loc[:,("full_street","orig_address")] = combo_data.loc[:,("full_street","orig_address")].fillna("")
+        write_mysql_data(combo_data,'cutter_canvas_data',region)
+        progress.canvas_data_complete = True
 
     
 
     
     print "Getting Recs"
-    street_change_recs = get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
-    pd.DataFrame(street_change_recs).to_excel("Change_recs.xlsx")
+    get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
+    #street_change_recs = get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
+    #pd.DataFrame(street_change_recs).to_excel("Change_recs.xlsx")
     
-    x = str(get_coverage_ratio())
+    x = str(get_coverage_ratio(region))
     
-    send_file_email(email,"Change_recs.xlsx",x)
-    os.remove("Change_recs.xlsx")
+    send_file_email(email,"Change_recs_{region}.csv".format(region=region),x)
+    os.remove("Change_recs_{region}.csv".format(region=region))
     
   
 
 @shared_task
 def region_update(form):
-    orig_ratio = get_coverage_ratio()
+    
     email = form['email']  
     region = form['region_name']
+    orig_ratio = get_coverage_ratio(region)
     bad_data = read_mysql_data("SELECT * FROM canvas_cutting.cutter_bad_data where region = '{region}'".format(region=region))
     bad_geo_data = read_mysql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM canvas_cutting.cutter_canvas_data where full_street = ""
         and region = '{region}'""".format(region=region))
@@ -405,7 +415,7 @@ def region_update(form):
     write_mysql_data(results_dict['bad_full_geo_data'],'cutter_canvas_data',region)
     execute_mysql("DELETE FROM canvas_cutting.cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
 
-    new_ratio = get_coverage_ratio()
+    new_ratio = get_coverage_ratio(region)
     email_text = "Thank you for your corrections. They took us from {perc1}% of all registered voters geocoded to {perc2}% of all registered voters geocoded. Attached is a list of some of the streets missing coverage.".format(perc1=orig_ratio,perc2=new_ratio)
     send_file_email(email,"top100.xlsx",email_text)
     os.remove("top100.xlsx")

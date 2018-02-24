@@ -5,7 +5,7 @@ from django.contrib import messages
 
 from tasks import output_turfs,add_region,region_update
 
-from cutter.models import region
+from cutter.models import region,region_progress
 
 def cutter(request):
     if request.method == 'POST':
@@ -27,12 +27,16 @@ def new_region(request):
         form = NewRegionForm(request.POST,request.FILES)
         #print form
         #if form.is_valid():
-        #with open('temp_geocode_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:
-        #    for chunk in request.FILES['open_addresses_io_file'].chunks():
-        #        destination.write(chunk)
-        #with open('temp_voter_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:
-        #    for chunk in request.FILES['voter_file'].chunks():
-        #        destination.write(chunk)
+        print request.POST['region_name']
+        print region_progress.objects.filter(name=request.POST['region_name'])
+        
+        if not region_progress.objects.filter(name=request.POST['region_name']):
+            with open('temp_geocode_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:
+                for chunk in request.FILES['open_addresses_io_file'].chunks():
+                    destination.write(chunk)
+            with open('temp_voter_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:
+                for chunk in request.FILES['voter_file'].chunks():
+                    destination.write(chunk)
         add_region.delay(form.data)
         messages.success(request, 'Thank you for submitting. Look for an email in a few minutes with next steps.')
         print 'hey this is running'
