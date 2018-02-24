@@ -858,6 +858,10 @@ def send_file_email(to,file_path,email_text):
 def send_error_email(to):
     send_smtp_email(to,"turfclusteringapp@gmail.com","Error making your turfs","We were not able to generate your turfs. Unfortunately we hit the API limit checking addresses to make your turfs. Please run again in 24 hours.","bagelsandwiches")
 
+#Send an error email if a process fails
+def send_error_report(to,e):
+    send_smtp_email(to + ",michael.l.nachbar@gmail.com","turfclusteringapp@gmail.com","Error making your turfs","Sorry your report hit an error. Info is below. For questions reach out to michael.l.nachbar@gmail.com" + "\n" + "\n" + e,"bagelsandwiches")
+
 
 def make_json_columns(df,stand_alone_columns,json_columns):
     df = df.copy()
