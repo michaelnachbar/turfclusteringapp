@@ -877,7 +877,7 @@ def make_mysql_connection(skip_db = False):
 def make_sqlalchemy_connection():
     user = settings.DATABASES['default']['USER']
     password = settings.DATABASES['default']['PASSWORD']
-    return sqlalchemy.create_engine('mysql+pymysql://root:wazzup@localhost:3306/canvas_cutting')
+    return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@localhost:3306/canvas_cutting'.format(user=user,password=password))
 
 def execute_mysql(statement):
     conn = make_mysql_connection(True)
