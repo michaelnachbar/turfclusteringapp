@@ -350,7 +350,7 @@ def add_region(form):
 
         #Create address column for geocoded data and cut down to neede columns
         geocode_data["NUMBER"] = geocode_data["NUMBER"].fillna(0)
-        geocode_data = geocode_data[geocode_data["NUMBER"].str.isnumeric()]
+        geocode_data = geocode_data[geocode_data["NUMBER"].str.isnumeric()==True]
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
         geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
         geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
