@@ -348,8 +348,9 @@ def add_region(form):
         #Read Geocoded List of Addresses
         geocode_data = pd.read_csv('temp_geocode_file_{region}.csv'.format(region=region))
 
-        #Create address column for geocoded data and cut down to needed columns
+        #Create address column for geocoded data and cut down to neede columns
         geocode_data["NUMBER"] = geocode_data["NUMBER"].fillna(0)
+        geocode_data = geocode_data[geocode_data.str.isnumeric()]
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
         geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
         geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
