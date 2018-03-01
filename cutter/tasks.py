@@ -332,9 +332,9 @@ def add_region(form):
 
         if not progress.voter_json_complete:
             print "Writing JSON Data"
-            write_json_data(voter_data,\
-                voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
-                region)
+            #write_json_data(voter_data,\
+            #    voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
+            #    region)
             print "JSON Data Written"
 
         
