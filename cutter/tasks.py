@@ -7,6 +7,7 @@ from django.utils.crypto import get_random_string
 from celery import shared_task
 
 import pandas as pd
+import numpy as np
 from fpdf import FPDF
 import os
 import shutil
@@ -303,9 +304,13 @@ def output_turfs(form):
 
 @shared_task
 def add_region(form):
-    
+    print form
     region = form['region_name']
     email = form['email']
+    if 'generate_recs' in form.keys():
+        gererate_recs = form['generate_recs']
+    else:
+        generate_recs = None
 
     
     add_new_region(region)
@@ -320,7 +325,8 @@ def add_region(form):
             voter_data.loc[:,("BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
 
         #Create address columns for voter data
-        voter_data["address"] = voter_data["BLKNUM"].map(str).str.replace(".0","") + \
+        voter_data["STRNAM"] = voter_data["STRNAM"].str.upper()
+        voter_data["address"] = voter_data["BLKNUM"].map(str).str.replace("\.0","") + \
             " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
         voter_data["address"] = voter_data["address"].str.strip()
         voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
@@ -331,11 +337,12 @@ def add_region(form):
         print voter_data.head()
 
         if not progress.voter_json_complete:
-            print "Writing JSON Data"
+            #print "Writing JSON Data"
             #write_json_data(voter_data,\
             #    voter_data.columns.difference(['address','full_street','address_exp',"BLKNUM","STRNAM","STRTYP","STRDIR","UNITYP","UNITNO"]),\
             #    region)
             print "JSON Data Written"
+            progress.voter_json_complete = True
 
         
 
@@ -350,9 +357,13 @@ def add_region(form):
 
         #Create address column for geocoded data and cut down to neede columns
         geocode_data["NUMBER"] = geocode_data["NUMBER"].fillna(0)
-        geocode_data = geocode_data[geocode_data["NUMBER"].str.isnumeric()==True]
+        print 'filled nas'
+        geocode_data = geocode_data[geocode_data["NUMBER"].apply(np.isreal)]
+        print 'filtered for #s'
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
+        print 'converted to int'
         geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
+        print 'made street names'
         geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
         geocode_data = geocode_data.reset_index()
 
@@ -365,7 +376,7 @@ def add_region(form):
 
         new_data=None
 
-        results_dict = iterate_merge(geocode_data,new_addresses,clean_dataframe)
+        results_dict = iterate_merge(geocode_data,new_addresses,None)
      
         if not progress.bad_data_complete:
             write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region)
@@ -384,14 +395,19 @@ def add_region(form):
 
         
         print "Getting Recs"
-        #get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
+        if generate_recs:
+            get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
         #street_change_recs = get_street_change_recs(results_dict['bad_data'],geocode_data=geocode_data,region=region)
         #pd.DataFrame(street_change_recs).to_excel("Change_recs.xlsx")
         
-        x = str(get_coverage_ratio(region))
+        x = str(get_coverage_ratio(region)) + " % of the voter data was geocoded."
         
-        send_file_email(email,"Change_recs_{region}.csv".format(region=region),x)
-        os.remove("Change_recs_{region}.csv".format(region=region))
+        if generate_recs:
+            send_file_email(email,"Change_recs_{region}.csv".format(region=region),x)
+            os.remove("Change_recs_{region}.csv".format(region=region))
+        else:
+            send_file_email(email,None,x)
+        
         progress.save()
     except Exception as e:
         send_error_report(email,e)

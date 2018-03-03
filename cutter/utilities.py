@@ -865,7 +865,7 @@ def send_error_report(to,e):
 
 def make_json_columns(df,stand_alone_columns,json_columns):
     df = df.copy()
-    df['json_col'] = df[json_columns].apply(lambda x: x.to_json(), axis=1)
+    df['json_col'] = df[json_columns].apply(lambda x: x.to_dict(), axis=1)
     print 'added json'
     df = df.loc[:,stand_alone_columns + ('json_col')]
     return df
@@ -957,7 +957,10 @@ def update_address(address,data,points,region):
 
 
 def iterate_merge(geocode_data,new_addresses,address_function,filename = None,**kwargs):
-    new_addresses = address_function(new_addresses,**kwargs)
+    if address_function:
+        new_addresses = address_function(new_addresses,**kwargs)
+    else:
+        new_addresses = new_addresses
     merge_data = new_addresses.merge(geocode_data,on="address",how="left")
     good_data = merge_data[pd.notnull(merge_data["LAT"])]
     bad_data = merge_data[pd.isnull(merge_data["LAT"])]

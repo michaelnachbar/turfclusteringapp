@@ -26,9 +26,8 @@ def new_region(request):
     if request.method == 'POST':
         form = NewRegionForm(request.POST,request.FILES)
         #print form
+        print form.__dict__
         #if form.is_valid():
-        print request.POST['region_name']
-        print region_progress.objects.filter(name=request.POST['region_name'])
         
         if not region_progress.objects.filter(name=request.POST['region_name']):
             with open('temp_geocode_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:

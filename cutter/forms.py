@@ -30,6 +30,7 @@ class NewRegionForm(forms.Form):
     email = forms.EmailField(max_length=254,required=True)
     open_addresses_io_file = forms.FileField(required=False)
     voter_file = forms.FileField(required=False)
+    generate_recs = forms.BooleanField(required=False,initial=True)
 
 def get_regions():
     return [(j.name,j.name) for i,j in enumerate(region.objects.all())]
