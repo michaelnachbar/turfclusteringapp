@@ -453,7 +453,7 @@ def update_cluster_numbers(slice_data_updated):
     #Take the average lat and lon of each cluster
     cluster_avgs = eligible_data.groupby("Cluster",as_index=False)["LAT","LON"].mean()
     #Make the center lat and center lon the address closest to the target
-    [center_lat,center_lon] = eligible_data.loc[0,"LAT"],eligible_data.loc[0,"LON"]
+    [center_lat,center_lon] = eligible_data.iloc[0,:]["LAT"],eligible_data.iloc[0,:]["LON"]
     #Make a new column for each cluster - distance = it's center's distance from the overall center
     cluster_avgs["distance"] = cluster_avgs.apply(row_distance,axis=1,center_lat=center_lat,center_lon=center_lon)
     #Sort by distance from the center
@@ -480,7 +480,7 @@ def get_cluster_totals(slice_data_updated):
     f = {"voters": ['sum',len],"doors": 'sum', "LAT": 'mean',"LON": "mean"}
     cluster_totals = eligible_data.groupby("Cluster",as_index=False).agg(f)
     cluster_totals["Cluster"] = cluster_totals["Cluster"].astype(int)
-    [center_lat,center_lon] = slice_data_updated.loc[0,"LAT"],slice_data_updated.loc[0,"LON"]
+    [center_lat,center_lon] = slice_data_updated.iloc[0,:]["LAT"],slice_data_updated.iloc[0,:]["LON"]
     #Calculate the distance from the center
     cluster_totals["distance"] = cluster_totals.apply(row_distance,axis=1,center_lat=center_lat,center_lon=center_lon)
     #Calculate teh walking distance for each cluster
