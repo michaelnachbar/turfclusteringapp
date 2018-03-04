@@ -308,7 +308,7 @@ def add_region(form):
     region = form['region_name']
     email = form['email']
     if 'generate_recs' in form.keys():
-        gererate_recs = form['generate_recs']
+        generate_recs = form['generate_recs']
     else:
         generate_recs = None
 
