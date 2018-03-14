@@ -27,9 +27,10 @@ def new_region(request):
         form = NewRegionForm(request.POST,request.FILES)
         #print form
         print form.__dict__
+        print request.POST
         #if form.is_valid():
         
-        if not region_progress.objects.filter(name=request.POST['region_name']):
+        if 'upload_new_files' in request.POST and request.POST['upload_new_files']:
             with open('temp_geocode_file_{region}.csv'.format(region=request.POST['region_name']), 'wb+') as destination:
                 for chunk in request.FILES['open_addresses_io_file'].chunks():
                     destination.write(chunk)
