@@ -362,7 +362,7 @@ def add_region(form):
         print 'filtered for #s'
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
         print 'converted to int'
-        geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
+        geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"].str.upper()
         print 'made street names'
         geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
         geocode_data = geocode_data.reset_index()
