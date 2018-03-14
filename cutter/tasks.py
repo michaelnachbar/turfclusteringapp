@@ -326,6 +326,9 @@ def add_region(form):
 
         #Create address columns for voter data
         voter_data["STRNAM"] = voter_data["STRNAM"].str.upper()
+        voter_data["STRNAM"] = voter_data["STRNAM"].str.strip()
+        voter_data["STRTYP"] = voter_data["STRTYP"].str.upper()
+        voter_data["STRTYP"] = voter_data["STRTYP"].str.strip()
         voter_data["address"] = voter_data["BLKNUM"].map(str).str.replace("\.0","") + \
             " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
         voter_data["address"] = voter_data["address"].str.strip()
@@ -362,7 +365,9 @@ def add_region(form):
         print 'filtered for #s'
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
         print 'converted to int'
-        geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"].str.upper()
+        geocode_data["STREET"] = geocode_data["STREET"].str.upper()
+        geocode_data["STREET"] = geocode_data["STREET"].str.strip()
+        geocode_data["address"] = geocode_data["NUMBER"].map(str) + " " + geocode_data["STREET"]
         print 'made street names'
         geocode_data = geocode_data.loc[:,("address","LON","LAT","STREET","NUMBER")].groupby("address").max()
         geocode_data = geocode_data.reset_index()
