@@ -230,7 +230,7 @@ def update_thresholds(slice_data,region):
             err_count = 0
         else:
             err_count += 1
-            if err_count >7:
+            if err_count >9999997:
                 return False
         #Write the result of the check to the master list of intersections
         write_row([i,j,k] + coords,region)
