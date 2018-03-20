@@ -247,7 +247,7 @@ def output_turfs(form):
             #Convert the html file into an image file
             make_img_file(cluster,folder_name)
             #Put the image file onto the PDF
-            add_img(pdf,cluster,folder_name,w=195)
+            add_img(pdf,cluster,folder_name,w=150)
 
 
         #Save the PDF

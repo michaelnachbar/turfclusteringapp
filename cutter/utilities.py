@@ -616,7 +616,7 @@ def make_html_file(df,folder):
 def text_page(pdf,cluster,street_list,doors,voters):
     #Add a page
     pdf.add_page()
-    pdf.set_font('Arial', 'B', 50)
+    pdf.set_font('Arial', 'B', 40)
     #Write the team name (based on cluster #)
     pdf.cell(30, 20, 'Team # ' + str(cluster),ln=2)
     pdf.set_font('Arial', 'B', 24)
@@ -624,10 +624,10 @@ def text_page(pdf,cluster,street_list,doors,voters):
     pdf.cell(20, 10, str(doors) + " registered doors",ln=2)
     pdf.cell(20, 10, str(voters) + " registered voters",ln=2)
     pdf.ln(5)
-    pdf.set_font('Arial', 'B', 14)
+    pdf.set_font('Arial', 'B', 12)
     #Write each street in the turf
     for i in street_list:
-        pdf.cell(16, 8, i,ln=2)
+        pdf.cell(14, 8, i,ln=2)
     #Make dots to specify what each means    
     pdf.set_fill_color(r = 0)
     pdf.ellipse(pdf.get_x() + 3,pdf.get_y() + 3,3,3,style='F')
