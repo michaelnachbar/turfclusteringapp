@@ -361,7 +361,7 @@ def add_region(form):
         #Create address column for geocoded data and cut down to neede columns
         geocode_data["NUMBER"] = geocode_data["NUMBER"].fillna('0')
         print 'filled nas'
-        geocode_data["NUMBER"].str.extract('(\d+)', expand=False)
+        geocode_data["NUMBER"] = geocode_data["NUMBER"].str.extract('(\d+)', expand=False)
         print 'filtered for #s'
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int)
         print 'converted to int'
