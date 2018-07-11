@@ -100,7 +100,7 @@ def make_filtered_file(data,canvas_location,num_turfs,turf_sizes,new_file_name):
     #Sort the addresses by this distance
     data = data.sort_values("distances")
     #Cut the data to get the closest n addresses
-    slice_data = data[:num_turfs * turf_sizes]
+    slice_data = data[:int(1.5*num_turfs * turf_sizes)]
     #Save them as an Excel file
     slice_data.to_excel(new_file_name)
 
@@ -696,7 +696,7 @@ def num_rows(row):
 #For each address make cells that will be on the list of addresses given to the canvassers
 #Each address gets at least a white row and a gray row
 def write_address_rows(pdf,address):
-    pdf.set_font('Times','',13.0) 
+    pdf.set_font('Times','',15.0) 
     th = pdf.font_size
     pdf.cell(4, th, address, border=1)
     pdf.cell(1.25, th, "", border=1)
@@ -713,7 +713,7 @@ def write_address_rows(pdf,address):
 
 #Write the first row on a new page - it will have the headers
 def write_header_row(pdf):
-    pdf.set_font('Times','',13.0) 
+    pdf.set_font('Times','',15.0) 
     th = pdf.font_size
     pdf.cell(4, th, "Address", border=1)
     pdf.cell(1.25, th, "Unit #", border=1)
@@ -731,9 +731,9 @@ def new_page(pdf,cluster,cont=False):
     if cont:
         header_text += " (Continued)"
     
-    pdf.set_font('Times','B',14.0) 
+    pdf.set_font('Times','B',16.0) 
     pdf.cell(10, 0.0, header_text, align='C')
-    pdf.set_font('Times','',13.0) 
+    pdf.set_font('Times','',15.0) 
     pdf.ln(0.5)
     
     write_header_row(pdf)
@@ -749,13 +749,13 @@ def new_page(pdf,cluster,cont=False):
 def write_address(pdf,row,cluster,row_count):
     address = row.address
     #Even an address with no registered doors will get printed
-    print_doors = max(1,row.doors)
+    print_doors = max(1,int(row.doors/1.5))
     #Start at the current row on the page and add the number of doors
     for i in range(row_count,row_count + print_doors):
         #Print 2 rows for each door
         #And when we're done a page make a new page
-        if row_count > 0 and row_count % 17 == 0:
-            pdf = new_page(pdf,cluster,cont=True)
+        #if row_count > 0 and row_count % 15 == 0:
+            #pdf = new_page(pdf,cluster,cont=True)
         write_address_rows(pdf,address)
         row_count += 1
     #Return how far down the page we are

@@ -17,7 +17,7 @@ from selenium import webdriver
 from pyvirtualdisplay import Display
 
 
-from utilities import make_filtered_file, update_thresholds, load_threshold_dict, update_slice_data_nulls, update_slice_data_avgs,\
+from utilities import make_filtered_file, load_threshold_dict, update_thresholds, update_slice_data_nulls, update_slice_data_avgs,\
 update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets, get_cluster_totals, update_cluster_numbers,\
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
 write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
@@ -223,6 +223,8 @@ def output_turfs(form):
 
         #Create a PDF file
         pdf = FPDF()
+        
+
 
         #Figure out how many clusters we have
         max_cluster = max(data["Cluster"])
@@ -259,6 +261,7 @@ def output_turfs(form):
         #This file will be a list of addresses for the canvassers to visit
         pdf=FPDF(format='letter', unit='in',orientation='L')
         pdf.set_fill_color(215)
+        pdf.set_auto_page_break(auto = True, margin = 0.1)
 
         #Scroll through list of clusters and write the list to PDF
         for i in range(max_cluster + 1):
@@ -394,6 +397,10 @@ def add_region(form):
             print len(combo_data)
             combo_data.loc[:,("doors","voters","NUMBER")] = combo_data.loc[:,("doors","voters","NUMBER")].fillna(0)
             combo_data.loc[:,("full_street","orig_address")] = combo_data.loc[:,("full_street","orig_address")].fillna("")
+            print combo_data.iloc[6268:6274,:]
+            print max(combo_data["NUMBER"])
+            print min(combo_data["NUMBER"])
+            combo_data.to_csv("Test.csv")
             write_mysql_data(combo_data,'cutter_canvas_data',region)
             progress.canvas_data_complete = True
 
