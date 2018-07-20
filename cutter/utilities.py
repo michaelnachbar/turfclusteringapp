@@ -696,30 +696,30 @@ def num_rows(row):
 #For each address make cells that will be on the list of addresses given to the canvassers
 #Each address gets at least a white row and a gray row
 def write_address_rows(pdf,address):
-    pdf.set_font('Times','',15.0) 
-    th = pdf.font_size
-    pdf.cell(4, th, address, border=1)
-    pdf.cell(1.25, th, "", border=1)
+    pdf.set_font('Times','',12.0) 
+    th = pdf.font_size * 1.25
+    pdf.cell(2.75, th, address, border=1)
+    pdf.cell(1, th, "", border=1)
     pdf.cell(1, th, "", border=1)
     pdf.cell(.75, th, "", border=1)
-    pdf.cell(3, th, "", border=1)
+    pdf.cell(2, th, "", border=1)
     pdf.ln(th)
-    pdf.cell(4, th, "", border=1,fill=True)
-    pdf.cell(1.25, th, "", border=1,fill=True)
+    pdf.cell(2.75, th, "", border=1,fill=True)
+    pdf.cell(1, th, "", border=1,fill=True)
     pdf.cell(1, th, "", border=1,fill=True)
     pdf.cell(.75, th, "", border=1,fill=True)
-    pdf.cell(3, th, "", border=1,fill=True)
+    pdf.cell(2, th, "", border=1,fill=True)
     pdf.ln(th)
 
 #Write the first row on a new page - it will have the headers
 def write_header_row(pdf):
-    pdf.set_font('Times','',15.0) 
-    th = pdf.font_size
-    pdf.cell(4, th, "Address", border=1)
-    pdf.cell(1.25, th, "Unit #", border=1)
+    pdf.set_font('Times','',12.0) 
+    th = pdf.font_size * 1.25
+    pdf.cell(2.75, th, "Address", border=1)
+    pdf.cell(1, th, "Unit #", border=1)
     pdf.cell(1, th, "Residence?", border=1)
     pdf.cell(.75, th, "Home?", border=1)
-    pdf.cell(3, th, "Notes", border=1)
+    pdf.cell(2, th, "Notes", border=1)
     pdf.ln(th)
 
 #On a new page list the team #
@@ -733,8 +733,8 @@ def new_page(pdf,cluster,cont=False):
     
     pdf.set_font('Times','B',16.0) 
     pdf.cell(10, 0.0, header_text, align='C')
-    pdf.set_font('Times','',15.0) 
-    pdf.ln(0.5)
+    pdf.set_font('Times','',12.0) 
+    pdf.ln(0.2)
     
     write_header_row(pdf)
     
@@ -749,13 +749,12 @@ def new_page(pdf,cluster,cont=False):
 def write_address(pdf,row,cluster,row_count):
     address = row.address
     #Even an address with no registered doors will get printed
-    print_doors = max(1,int(row.doors/1.5))
     #Start at the current row on the page and add the number of doors
     for i in range(row_count,row_count + print_doors):
         #Print 2 rows for each door
         #And when we're done a page make a new page
-        #if row_count > 0 and row_count % 15 == 0:
-            #pdf = new_page(pdf,cluster,cont=True)
+        if row_count > 0 and row_count % 24 == 0:
+            pdf = new_page(pdf,cluster,cont=True)
         write_address_rows(pdf,address)
         row_count += 1
     #Return how far down the page we are

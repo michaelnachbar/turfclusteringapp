@@ -49,7 +49,7 @@ def output_turfs(form):
         #Will replace with an actual database in a future update
         #data = pd.read_excel("Updated_data.xlsx")
         #data = pd.read_excel("District_7_data.xlsx")
-        data = read_mysql_data("SELECT * FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
+        data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
 
 
         #Based on turf size and central point take the X closest addresses
@@ -259,7 +259,7 @@ def output_turfs(form):
         
         #Make a new PDF file
         #This file will be a list of addresses for the canvassers to visit
-        pdf=FPDF(format='letter', unit='in',orientation='L')
+        pdf=FPDF(format='letter', unit='in',orientation='P')
         pdf.set_fill_color(215)
         pdf.set_auto_page_break(auto = True, margin = 0.1)
 
