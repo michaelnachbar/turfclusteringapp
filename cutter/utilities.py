@@ -748,6 +748,7 @@ def new_page(pdf,cluster,cont=False):
 #row_count - how far down the sheet we are
 def write_address(pdf,row,cluster,row_count):
     address = row.address
+    print_doors = max(1,int(row.doors/1.5))
     #Even an address with no registered doors will get printed
     #Start at the current row on the page and add the number of doors
     for i in range(row_count,row_count + print_doors):
