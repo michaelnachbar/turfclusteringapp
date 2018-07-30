@@ -325,7 +325,7 @@ def add_region(form):
         voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region))
 
 
-        voter_data["state"] = "TX"
+        #voter_data["state"] = "TX"
 
 
         voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
@@ -365,6 +365,8 @@ def add_region(form):
         
 
         #Make a pivot of #of registered doors and registered voters per street address
+        #new_data["complete_address"] = new_data["address"] + ", " + new_data["city"] + ", " + \
+        #    new_data["state"] + ", " + new_data["zip"].map(str)
         f = {"address_exp": 'nunique', "address_exp": 'count'}
         new_addresses = new_data.groupby(["city","state","zip","BLKNUM","address","full_street"])["address_exp"].agg(['count','nunique'])
         new_addresses = new_addresses.reset_index()
@@ -454,10 +456,11 @@ def add_region(form):
         combo_data = geo_voter_data.append(geocode_missing)
         
         combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
+        combo_data["NUMBER"]  = combo_data["NUMBER"] .str.replace(r"[a-zA-Z]",'')
         combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
         combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
             combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
-        write_mysql_data(combo_data,'cutter_canvas_data',"Austin,  TX")
+        write_mysql_data(combo_data,'cutter_canvas_data',region)
         progress.canvas_data_complete = True
         
         
