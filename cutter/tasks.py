@@ -12,6 +12,11 @@ from fpdf import FPDF
 import os
 import shutil
 from random import randint
+from multiprocessing.dummy import Pool as ThreadPool 
+import censusgeocode
+import random
+import itertools
+import time
 
 from selenium import webdriver
 from pyvirtualdisplay import Display
@@ -22,7 +27,7 @@ update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets,
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
 write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
 write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list, \
-send_error_report
+send_error_report,send_nofile_email
 
 from cutter.models import region_progress
 
@@ -50,6 +55,7 @@ def output_turfs(form):
         #data = pd.read_excel("Updated_data.xlsx")
         #data = pd.read_excel("District_7_data.xlsx")
         data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
+        #data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
 
 
         #Based on turf size and central point take the X closest addresses
@@ -307,6 +313,162 @@ def output_turfs(form):
 
 @shared_task
 def add_region(form):
+    print form
+    region = form['region_name']
+    email = form['email']
+
+    
+    add_new_region(region)
+    progress = region_progress.objects.get(name=region) 
+    try:
+        #Read list of registered voters 
+        voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region))
+
+
+        voter_data["state"] = "TX"
+
+
+        voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
+            voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
+
+ 
+        #Create address columns for voter data
+        voter_data["STRNAM"] = voter_data["STRNAM"].str.upper()
+        voter_data["STRNAM"] = voter_data["STRNAM"].str.strip()
+        voter_data["STRTYP"] = voter_data["STRTYP"].str.upper()
+        voter_data["STRTYP"] = voter_data["STRTYP"].str.strip()
+        voter_data["address"] = voter_data["BLKNUM"].map(str).str.replace("\.0","") + \
+            " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+        voter_data["address"] = voter_data["address"].str.strip()
+        voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
+            " " + voter_data["UNITNO"].map(str)
+        voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+        voter_data["full_street"] = voter_data["full_street"].str.strip()
+
+
+        if not progress.voter_json_complete:
+            write_mysql_data(voter_data,"voter_data_" + region,region,'replace',chunksize=10000)
+            progress.voter_json_complete = True
+
+        
+
+        #Cut voter data down to needed columns
+        new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
+        new_data = new_data.fillna("")
+
+        voter_data = None
+
+        #Read Geocoded List of Addresses
+        print 'about to geocode'
+        geocode_data = pd.read_csv('temp_geocode_file_{region}.csv'.format(region=region))
+        print 'geocode data'
+        
+
+        #Make a pivot of #of registered doors and registered voters per street address
+        f = {"address_exp": 'nunique', "address_exp": 'count'}
+        new_addresses = new_data.groupby(["city","state","zip","BLKNUM","address","full_street"])["address_exp"].agg(['count','nunique'])
+        new_addresses = new_addresses.reset_index()
+        new_addresses.columns = ["city","state","zip","BLKNUM",'address',"full_street",'voters','doors']
+        new_addresses["orig_address"] = new_addresses["address"]
+
+        address_count = len(new_addresses.index)
+
+        new_data=None
+
+        filecount = 1+len(new_addresses) / 1000
+        new_addresses["complete_address"] = new_addresses["address"] + ", " + new_addresses["city"] + ", " + \
+            new_addresses["state"] + ", " + new_addresses["zip"].map(str)
+
+        def batch_function(num):
+            try:
+                time.sleep(num%100)
+                temp_filename = "dummy{num}.csv".format(num=num)
+                new_addresses.loc[num*1000:num*1000+1000,("address","city","state","zip")].to_csv(temp_filename)
+                z=censusgeocode.addressbatch(temp_filename)
+                os.remove(temp_filename)
+                print num
+                return [[i['address'],i['lat'],i['lon']] for i in z]
+            except:
+                os.remove(temp_filename)
+                print "error on {num}".format(num=num)
+
+        array = range(filecount)
+        pool = ThreadPool(100) 
+        mapped_data = pool.map(batch_function,array)
+        ret_list = list(itertools.chain.from_iterable(mapped_data))[1:]
+
+        geo_voter_data = pd.DataFrame(ret_list,columns = ["complete_address","LAT","LON"])
+        geo_voter_data = geo_voter_data.merge(right=new_addresses,how="inner",on="complete_address")
+        geo_voter_data = geo_voter_data[pd.notnull(geo_voter_data["LAT"])]
+
+
+        #Create address column for geocoded data and cut down to neede columns
+        geocode_data["LAT1"] = geocode_data.apply(lambda x: "{0:.2f}".format(x["LAT"]),axis=1)
+        geocode_data["LON1"] = geocode_data.apply(lambda x: "{0:.2f}".format(x["LON"]),axis=1)
+        geo_voter_data["LAT1"] = geo_voter_data.apply(lambda x: "{0:.2f}".format(x["LAT"]),axis=1)
+        geo_voter_data["LON1"] = geo_voter_data.apply(lambda x: "{0:.2f}".format(x["LON"]),axis=1)
+        geocode_data["LAT2"] = geocode_data.apply(lambda x: "{0:.3f}".format(x["LAT"]),axis=1)
+        geocode_data["LON2"] = geocode_data.apply(lambda x: "{0:.3f}".format(x["LON"]),axis=1)
+        geo_voter_data["LAT2"] = geo_voter_data.apply(lambda x: "{0:.3f}".format(x["LAT"]),axis=1)
+        geo_voter_data["LON2"] = geo_voter_data.apply(lambda x: "{0:.3f}".format(x["LON"]),axis=1)
+
+        geocode_data["first_letter"] = geocode_data["STREET"].str[0]
+        geo_voter_data["first_letter"] = geo_voter_data["full_street"].str[0]
+     
+        voter_merge = geo_voter_data.loc[:,("BLKNUM","LAT1","LON1","first_letter")]
+        geocode_missing = geocode_data.merge(voter_merge,how="left",left_on = ("NUMBER","LAT1","LON1","first_letter"), \
+                                             right_on = ("BLKNUM","LAT1","LON1","first_letter"))
+        geocode_missing = geocode_missing[pd.isnull(geocode_missing["BLKNUM"])]
+
+        voter_merge = geo_voter_data.loc[:,("BLKNUM","LAT2","LON2")]
+        geocode_missing = geocode_missing.merge(geo_voter_data,how="left",left_on = ("NUMBER","LAT2","LON2"), \
+                                             right_on = ("BLKNUM","LAT2","LON2"))
+        geocode_missing = geocode_missing[pd.isnull(geocode_missing["BLKNUM_y"])]
+
+        geo_voter_data["region"] = region
+        geo_voter_data = geo_voter_data.loc[:,("region","address", "full_street", "orig_address", "voters", \
+                                               "doors", "BLKNUM", "full_street", "LAT", "LON")]
+
+        geocode_missing["region"] = region
+        geocode_missing["doors"] = 0
+        geocode_missing["voters"] = 0
+        geocode_missing["address"] = geocode_missing["NUMBER"].map(str) + " " + geocode_missing["STREET"]
+        geocode_missing = geocode_missing.loc[:,("region", "address", "STREET", "address", "voters", \
+                                                "doors", "NUMBER", "STREET", "LAT_x", "LON_x")]
+
+        geo_voter_data.columns = ["region","address","full_street","orig_address","voters","doors","NUMBER","STREET","LAT","LON"]
+        geocode_missing.columns = ["region","address","full_street","orig_address","voters","doors","NUMBER","STREET","LAT","LON"]
+
+        new_address_count = len(geo_voter_data.index)
+        address_perc = 100 * new_address_count/address_count
+        address_perc = "{0:.2f}".format(address_perc)
+        geocode_missing_count = len(geocode_missing.index)
+
+        email_text = """We were able to code {new_address_count} out of {address_count} addresses. Or 
+            {perc}%. We added {geocode_missing} addresses on top of that. 
+        """.format(new_address_count = str(new_address_count),address_count = str(address_count), \
+            perc = address_perc, geocode_missing = str(geocode_missing_count))
+
+        send_nofile_email(email,email_text)
+        
+        combo_data = geo_voter_data.append(geocode_missing)
+        
+        combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
+        combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
+        combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
+            combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
+        write_mysql_data(combo_data,'cutter_canvas_data',"Austin,  TX")
+        progress.canvas_data_complete = True
+        
+        
+        progress.save()
+    except Exception as e:
+        send_error_report(email,e)
+        progress.save()    
+
+
+@shared_task
+def add_region_2(form):
     print form
     region = form['region_name']
     email = form['email']

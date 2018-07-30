@@ -854,6 +854,10 @@ def send_file_email(to,file_path,email_text):
     send_smtp_email(to,"turfclusteringapp@gmail.com","Here is your file",email_text,"bagelsandwiches",attach=file_path)
 
 
+def send_nofile_email(to,email_text):
+    send_smtp_email(to,"turfclusteringapp@gmail.com","Here is your file",email_text,"bagelsandwiches")
+
+
 #Send an error email if a process fails
 def send_error_email(to):
     send_smtp_email(to,"turfclusteringapp@gmail.com","Error making your turfs","We were not able to generate your turfs. Unfortunately we hit the API limit checking addresses to make your turfs. Please run again in 24 hours.","bagelsandwiches")
@@ -894,11 +898,11 @@ def simple_query(query):
     c.execute(query)
     return c.fetchall()
 
-def write_mysql_data(df,table_name,region,if_exists='append',better_append=False):
+def write_mysql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None):
     df["region"] = region
     con = make_sqlalchemy_connection()
     if not better_append:
-        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False)
+        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,chunksize=chunksize)
     else:
         max_id = read_mysql_data("SELECT MAX(id) FROM {table_name}".format(table_name=table_name))
         id_range = range(max_id+1,max_id + len(df) + 1)
