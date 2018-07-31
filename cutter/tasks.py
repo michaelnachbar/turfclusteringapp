@@ -345,6 +345,8 @@ def add_region(form):
             " " + voter_data["UNITNO"].map(str)
         voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
         voter_data["full_street"] = voter_data["full_street"].str.strip()
+        voter_data["full_street"] = voter_data["full_street"].str.replace("STREET","ST")
+        voter_data["full_street"] = voter_data["full_street"].str.replace("AVENUE","AVE")
 
 
         if not progress.voter_json_complete:
@@ -364,6 +366,8 @@ def add_region(form):
         print 'about to geocode'
         geocode_data = pd.read_csv('temp_geocode_file_{region}.csv'.format(region=region))
         geocode_data["STREET"] = geocode_data["STREET"].str.upper()
+        geocode_data["STREET"] = geocode_data["STREET"].str.replace("STREET","ST")
+        geocode_data["STREET"] = geocode_data["STREET"].str.replace("AVENUE","AVE")
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int).map(str)
         print 'geocode data'
         
