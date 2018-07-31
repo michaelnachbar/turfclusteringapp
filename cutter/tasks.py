@@ -457,8 +457,8 @@ def add_region(form):
         
         combo_data = geo_voter_data.append(geocode_missing)
         
-        combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
         combo_data["NUMBER"]  = combo_data["NUMBER"] .str.replace("\.0","")
+        combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
         combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
         combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
             combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
