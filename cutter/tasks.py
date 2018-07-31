@@ -337,7 +337,8 @@ def add_region(form):
         voter_data["STRNAM"] = voter_data["STRNAM"].str.strip()
         voter_data["STRTYP"] = voter_data["STRTYP"].str.upper()
         voter_data["STRTYP"] = voter_data["STRTYP"].str.strip()
-        voter_data["address"] = voter_data["BLKNUM"].map(str).str.replace("\.0","") + \
+        voter_data["BLKNUM"] = voter_data["BLKNUM"].map(str).str.replace("\.0","")
+        voter_data["address"] = voter_data["BLKNUM"] + \
             " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
         voter_data["address"] = voter_data["address"].str.strip()
         voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
@@ -355,6 +356,7 @@ def add_region(form):
         #Cut voter data down to needed columns
         new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
         new_data = new_data.fillna("")
+        new_data["zip"] = new_data["zip"].str[:5]
 
         voter_data = None
 
@@ -456,7 +458,7 @@ def add_region(form):
         combo_data = geo_voter_data.append(geocode_missing)
         
         combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
-        combo_data["NUMBER"]  = combo_data["NUMBER"] .str.replace(r"[a-zA-Z]",'')
+        combo_data["NUMBER"]  = combo_data["NUMBER"] .str.replace("\.0","")
         combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
         combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
             combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
