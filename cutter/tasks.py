@@ -322,41 +322,48 @@ def add_region(form):
     progress = region_progress.objects.get(name=region) 
     try:
         #Read list of registered voters 
-        voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region))
+        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=100000)
 
 
         #voter_data["state"] = "TX"
+        start = True
+        for voter_data in full_voter_data:
+            voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
+                voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
+
+     
+            #Create address columns for voter data
+            voter_data["STRNAM"] = voter_data["STRNAM"].str.upper()
+            voter_data["STRNAM"] = voter_data["STRNAM"].str.strip()
+            voter_data["STRTYP"] = voter_data["STRTYP"].str.upper()
+            voter_data["STRTYP"] = voter_data["STRTYP"].str.strip()
+            voter_data["BLKNUM"] = voter_data["BLKNUM"].map(str).str.replace("[^0-9]","")
+            voter_data["address"] = voter_data["BLKNUM"] + \
+                " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+            voter_data["address"] = voter_data["address"].str.strip()
+            voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
+                " " + voter_data["UNITNO"].map(str)
+            voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
+            voter_data["full_street"] = voter_data["full_street"].str.strip()
+            voter_data["full_street"] = voter_data["full_street"].str.replace("STREET","ST")
+            voter_data["full_street"] = voter_data["full_street"].str.replace("AVENUE","AVE")
 
 
-        voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
-            voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
+            if not progress.voter_json_complete:
+                write_mysql_data(voter_data,"voter_data_" + region,region,'append',chunksize=10000)
+                        
 
- 
-        #Create address columns for voter data
-        voter_data["STRNAM"] = voter_data["STRNAM"].str.upper()
-        voter_data["STRNAM"] = voter_data["STRNAM"].str.strip()
-        voter_data["STRTYP"] = voter_data["STRTYP"].str.upper()
-        voter_data["STRTYP"] = voter_data["STRTYP"].str.strip()
-        voter_data["BLKNUM"] = voter_data["BLKNUM"].map(str).str.replace("[^0-9]","")
-        voter_data["address"] = voter_data["BLKNUM"] + \
-            " " + voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
-        voter_data["address"] = voter_data["address"].str.strip()
-        voter_data["address_exp"] = voter_data["address"].map(str) + " " + voter_data["UNITYP"].map(str) + \
-            " " + voter_data["UNITNO"].map(str)
-        voter_data["full_street"] = voter_data["STRNAM"].map(str) + " " + voter_data["STRTYP"].map(str)
-        voter_data["full_street"] = voter_data["full_street"].str.strip()
-        voter_data["full_street"] = voter_data["full_street"].str.replace("STREET","ST")
-        voter_data["full_street"] = voter_data["full_street"].str.replace("AVENUE","AVE")
-
-
-        if not progress.voter_json_complete:
-            write_mysql_data(voter_data,"voter_data_" + region,region,'replace',chunksize=10000)
-            progress.voter_json_complete = True
+        if start:
+            new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
+        else:
+            new_data = new_data.append(voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")])         
+        progress.voter_json_complete = True
+            
 
         
 
         #Cut voter data down to needed columns
-        new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
+        #new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
         new_data = new_data.fillna("")
         new_data["zip"] = new_data["zip"].str[:5]
 
@@ -368,6 +375,8 @@ def add_region(form):
         geocode_data["STREET"] = geocode_data["STREET"].str.upper()
         geocode_data["STREET"] = geocode_data["STREET"].str.replace("STREET","ST")
         geocode_data["STREET"] = geocode_data["STREET"].str.replace("AVENUE","AVE")
+        geocode_data["STREET"] = geocode_data["STREET"].str.replace("PLACE","PL")
+        geocode_data["STREET"] = geocode_data["STREET"].str.replace("COURT","CT")
         geocode_data["NUMBER"] = geocode_data["NUMBER"].map(int).map(str)
         print 'geocode data'
         
