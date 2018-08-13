@@ -356,16 +356,20 @@ def add_region(form):
                 if not progress.voter_json_complete:
                     try:
                         write_mysql_data(voter_data,"voter_data_" + region,region,'replace')
-                    except:
-                        print 'sql error'
+                    except Exception as e:
+                        print type(e)     # the exception instance
+                        print e.args      # arguments stored in .args
+                        print e           # __str__ allows args to be printed directly
                 start = False
                 new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
             else:
                 if not progress.voter_json_complete:
                     try:
                         write_mysql_data(voter_data,"voter_data_" + region,region,'append')
-                    except:
-                        print 'sql error'
+                    except Exception as e:
+                        print type(e)     # the exception instance
+                        print e.args      # arguments stored in .args
+                        print e           # __str__ allows args to be printed directly
                 new_data = new_data.append(voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")])         
         progress.voter_json_complete = True
             
