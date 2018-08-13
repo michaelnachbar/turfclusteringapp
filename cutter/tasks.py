@@ -322,7 +322,7 @@ def add_region(form):
     progress = region_progress.objects.get(name=region) 
     try:
         #Read list of registered voters 
-        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=100000)
+        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000)
 
 
         #voter_data["state"] = "TX"
@@ -349,14 +349,23 @@ def add_region(form):
             voter_data["full_street"] = voter_data["full_street"].str.replace("AVENUE","AVE")
 
 
-            if not progress.voter_json_complete:
-                write_mysql_data(voter_data,"voter_data_" + region,region,'append',chunksize=10000)
+            
                         
 
             if start:
+                if not progress.voter_json_complete:
+                    try:
+                        write_mysql_data(voter_data,"voter_data_" + region,region,'replace')
+                    except:
+                        print 'sql error'
+                start = False
                 new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
             else:
-                start = False
+                if not progress.voter_json_complete:
+                    try:
+                        write_mysql_data(voter_data,"voter_data_" + region,region,'append')
+                    except:
+                        print 'sql error'
                 new_data = new_data.append(voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")])         
         progress.voter_json_complete = True
             
