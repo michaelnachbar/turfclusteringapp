@@ -353,10 +353,11 @@ def add_region(form):
                 write_mysql_data(voter_data,"voter_data_" + region,region,'append',chunksize=10000)
                         
 
-        if start:
-            new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
-        else:
-            new_data = new_data.append(voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")])         
+            if start:
+                new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
+            else:
+                start = False
+                new_data = new_data.append(voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")])         
         progress.voter_json_complete = True
             
 
