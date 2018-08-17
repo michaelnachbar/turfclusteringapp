@@ -322,7 +322,7 @@ def add_region(form):
     progress = region_progress.objects.get(name=region) 
     try:
         #Read list of registered voters 
-        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000)
+        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000,dtype='str')
 
 
         #voter_data["state"] = "TX"
