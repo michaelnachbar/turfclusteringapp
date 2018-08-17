@@ -379,7 +379,7 @@ def add_region(form):
         #Cut voter data down to needed columns
         #new_data = voter_data.loc[:,("city","state","zip","BLKNUM","address","address_exp","full_street")]
         new_data = new_data.fillna("")
-        new_data["zip"] = new_data["zip"].str[:5]
+        new_data["zip"] = new_data["zip"].map(str).str[:5]
 
         voter_data = None
 
