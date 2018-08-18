@@ -898,11 +898,11 @@ def simple_query(query):
     c.execute(query)
     return c.fetchall()
 
-def write_mysql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None):
+def write_mysql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None,dtype=None):
     df["region"] = region
     con = make_sqlalchemy_connection()
     if not better_append:
-        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,chunksize=chunksize)
+        df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,chunksize=chunksize,dtype=dtype)
     else:
         max_id = read_mysql_data("SELECT MAX(id) FROM {table_name}".format(table_name=table_name))
         id_range = range(max_id+1,max_id + len(df) + 1)
