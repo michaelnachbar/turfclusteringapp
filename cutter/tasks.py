@@ -335,7 +335,7 @@ def add_region(form):
                 else:
                     string_len_dict[col] = max(string_len_dict[col],voter_data[col].str.len().max())  
             for col in string_len_dict.keys():
-                varchar_len_dict[col] = sqlalchemy.types.NVARCHAR(length=varchar_len_dict[col])
+                varchar_len_dict[col] = sqlalchemy.types.NVARCHAR(length=string_len_dict[col])
         varchar_len_dict["full_street"] = sqlalchemy.types.NVARCHAR(length=1000)
         varchar_len_dict["address"] = sqlalchemy.types.NVARCHAR(length=1000)
         varchar_len_dict["address_exp"] = sqlalchemy.types.NVARCHAR(length=1000)
