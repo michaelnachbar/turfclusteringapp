@@ -330,7 +330,7 @@ def add_region(form):
             varchar_len_dict = {}
             for col in voter_data.columns:
                 #try:
-                if not col in d:
+                if not col in string_len_dict:
                     string_len_dict[col] = max(voter_data[col].str.len().max(),10)
                 else:
                     string_len_dict[col] = max(string_len_dict[col],voter_data[col].str.len().max())  
