@@ -17,6 +17,7 @@ import censusgeocode
 import random
 import itertools
 import time
+import sqlalchemy
 
 from selenium import webdriver
 from pyvirtualdisplay import Display
@@ -322,11 +323,28 @@ def add_region(form):
     progress = region_progress.objects.get(name=region) 
     try:
         #Read list of registered voters 
-        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000,dtype='str')
+        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000,dtype='str',keep_default_na=False)
+        
+        for voter_data in full_voter_data:
+            string_len_dict = {}
+            varchar_len_dict = {}
+            for col in voter_data.columns:
+                #try:
+                if not col in d:
+                    string_len_dict[col] = max(voter_data[col].str.len().max(),10)
+                else:
+                    string_len_dict[col] = max(string_len_dict[col],voter_data[col].str.len().max())  
+            for col in string_len_dict.keys():
+                varchar_len_dict[i] = sqlalchemy.types.NVARCHAR(length=varchar_len_dict[i])
+        varchar_len_dict["full_street"] = sqlalchemy.types.NVARCHAR(length=1000)
+        varchar_len_dict["address"] = sqlalchemy.types.NVARCHAR(length=1000)
+        varchar_len_dict["address_exp"] = sqlalchemy.types.NVARCHAR(length=1000)
 
 
         #voter_data["state"] = "TX"
         start = True
+        
+        full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000,dtype='str',keep_default_na=False)
         for voter_data in full_voter_data:
             voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")] = \
                 voter_data.loc[:,("city","state","zip","BLKNUM","STRNAM","STRTYP","UNITYP","UNITNO")].fillna("")
@@ -354,8 +372,9 @@ def add_region(form):
 
             if start:
                 if not progress.voter_json_complete:
+                    
                     try:
-                        write_mysql_data(voter_data,"voter_data_" + region,region,'replace')
+                        write_mysql_data(voter_data,"voter_data_" + region,region,'replace',dtype=varchar_len_dict)
                     except Exception as e:
                         print type(e)     # the exception instance
                         print e.args      # arguments stored in .args
