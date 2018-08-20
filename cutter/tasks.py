@@ -451,8 +451,8 @@ def add_region(form):
 
         geo_voter_data = pd.DataFrame(ret_list,columns = ["complete_address","LAT","LON"])
         geo_voter_data = geo_voter_data.merge(right=new_addresses,how="inner",on="complete_address")
-        geo_voter_data = geo_voter_data[pd.notnull(geo_voter_data["LAT"])]
-
+        geo_voter_data["LAT"] = geo_voter_data["LAT"].fillna(0)
+        geo_voter_data["LON"] = geo_voter_data["LON"].fillna(0)
 
         #Create address column for geocoded data and cut down to neede columns
         geocode_data["LAT1"] = geocode_data.apply(lambda x: "{0:.2f}".format(x["LAT"]),axis=1)
@@ -491,7 +491,7 @@ def add_region(form):
         geo_voter_data.columns = ["region","address","full_street","orig_address","voters","doors","NUMBER","STREET","LAT","LON"]
         geocode_missing.columns = ["region","address","full_street","orig_address","voters","doors","NUMBER","STREET","LAT","LON"]
 
-        new_address_count = len(geo_voter_data.index)
+        new_address_count = len(geo_voter_data[pd.notnull(geo_voter_data["LAT"])].index)
         address_perc = 100 * new_address_count/address_count
         address_perc = "{0:.2f}".format(address_perc)
         geocode_missing_count = len(geocode_missing.index)
