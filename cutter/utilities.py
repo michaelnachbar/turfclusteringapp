@@ -597,7 +597,7 @@ def make_html_file(df,folder):
     #Find the center of addresses specified
     center_lat,center_lon = np.mean(df["LAT"]),np.mean(df["LON"])
     #Make a Google map centered on the specified address
-    gmap = gmplot.GoogleMapPlotter(center_lat,center_lon,16)
+    gmap = gmplot.GoogleMapPlotter(center_lat,center_lon,16,apikey='AIzaSyBWmNLBKBZOVA78PfJIh8H51SD0Li3b0F8')
     #Split the addresses into 4 categories
     df_no_voters = df[df["voters"]==0]
     df_some_voters = df[(df["voters"]>0) & (df["voters"]<4)]
