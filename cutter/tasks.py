@@ -28,7 +28,9 @@ update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets,
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
 write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
 write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list, \
-send_error_report,send_nofile_email
+send_error_report,send_nofile_email, matchmaker, mile_distance, add_score, get_coordinates, read_afford_units, split_afford_units, \
+main_backup_afford_units, get_bonus_afford_units, get_market_rate_units, clean_market_rate_units, split_market_rate_units, \
+main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf
 
 from cutter.models import region_progress
 
@@ -45,6 +47,8 @@ def output_turfs(form):
     try:
         #send_error_email(email)
         
+
+
         folder_name = 'temp_folder_' + str(randint(1000,10000))
 
 
@@ -325,9 +329,10 @@ def add_region(form):
         #Read list of registered voters 
         full_voter_data = pd.read_csv('temp_voter_file_{region}.csv'.format(region=region),chunksize=5000,dtype='str',keep_default_na=False)
         
+        string_len_dict = {}
+        varchar_len_dict = {}        
         for voter_data in full_voter_data:
-            string_len_dict = {}
-            varchar_len_dict = {}
+            
             for col in voter_data.columns:
                 #try:
                 if not col in string_len_dict:
@@ -678,3 +683,39 @@ def region_update(form):
         os.remove("top100.xlsx")
     except Exception as e:
         send_error_report(email,e)
+
+@shared_task
+def bond_turfs(form):
+
+    center_address = form['center_address']
+    email = form['email']
+    est_canvassers = int(form['est_canvassers'])
+    percent_affordable = float(form['percent_affordable']) / 100.0
+    coords = get_coordinates(center_address,False)
+    print form
+    print coords
+    
+    afford_units = read_afford_units(coords)
+    big_afford_units,small_afford_units = split_afford_units(afford_units)
+
+    main_afford_units,backup_afford_units = main_backup_afford_units(big_afford_units,est_canvassers,percent_affordable)
+    bonus_afford_units = get_bonus_afford_units(small_afford_units,main_afford_units)  
+
+    market_rate_units = get_market_rate_units(coords,afford_units)
+    market_rate_units = clean_market_rate_units(market_rate_units,coords)
+    big_market_rate_units,small_market_rate_units = split_market_rate_units(market_rate_units)
+
+    main_market_rate_units,backup_market_rate_units = main_backup_market_rate_units(big_market_rate_units,percent_affordable,est_canvassers)
+    bonus_market_rate_units = get_bonus_market_rate_units(small_market_rate_units,main_market_rate_units)
+
+    main_units = merge_units(main_afford_units,main_market_rate_units)
+    backup_units = merge_units(backup_afford_units,backup_market_rate_units)
+    bonus_units = merge_units(bonus_afford_units,bonus_market_rate_units)
+
+    backup_dict = match_frames(main_units,backup_units,colname = "bigcount")
+    main_unit_match,bonus_unit_match = bonus_match(main_units,bonus_units)
+    bonus_dict = match_frames(main_unit_match,bonus_unit_match)
+
+    make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict)
+
+    return
