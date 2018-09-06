@@ -70,7 +70,7 @@ def output_turfs(form):
         if extra_filters:
             query = """
             SELECT
-                distinct address
+                distinct address as vd_address
             FROM
                 `voter_data_{region}` vd 
             WHERE
@@ -80,20 +80,21 @@ def output_turfs(form):
             print len(good_addresses)
             if not include_nonvoters:
                 columns = data.columns
-                data = data.merge(good_addresses,how="inner",left_on="orig_address",right_on="address")
+                data = data.merge(good_addresses,how="inner",left_on="orig_address",right_on="vd_address")
                 data = data.loc[:,columns]
                 print len(data)
             else:
                 columns = data.columns
-                v_data = data.loc[data["LAT"]<>0,:]
-                nv_data = data.loc[data["LAT"]==0,:]
-                v_data = v_data.merge(good_addresses,how="inner",left_on="orig_address",right_on="address")
+                v_data = data.loc[data["voters"]<>0,:]
+                nv_data = data.loc[data["voters"]==0,:]
+                v_data = v_data.merge(good_addresses,how="inner",left_on="orig_address",right_on="vd_address")
                 v_data = v_data.loc[:,columns]
-                data = v_data.merge(nv_data)
+                data = v_data.append(nv_data)
                 v_data,nv_data = None,None
+        print data.columns
+        print data.head()
         #data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
 
-        print data
 
         #Based on turf size and central point take the X closest addresses
         make_filtered_file(data,center_address,num_clusters,turf_size,folder_name + "/Test_filter.xlsx")
@@ -101,6 +102,7 @@ def output_turfs(form):
 
         #Take big data file out of memory
         data = None
+        print 'made filtered file'
         
         
         
@@ -127,6 +129,7 @@ def output_turfs(form):
 
         #Load this list of intersections
         threshold_dict = load_threshold_dict(region,True)
+        print 'loaded thershold dict'
 
 
 
@@ -142,7 +145,7 @@ def output_turfs(form):
         slice_data_updated = update_slice_data_check_clusters(slice_data_updated,num_clusters,threshold_dict)
         #For streets that got removed, try to find a new cluster
         slice_data_updated = check_bad_streets(slice_data_updated,threshold_dict)
-
+        print 'clusters'
 
         #Scroll through turfs and split turfs with too many doors into 2
         #As long as there are 2 turfs
@@ -181,7 +184,7 @@ def output_turfs(form):
 
 
 
-        
+        print 'splits'
 
 
         #Reorder clusters by distance
@@ -208,6 +211,7 @@ def output_turfs(form):
                     missing_clusters.append(upd_cluster)
 
 
+        print 'merging'
         #Reorder clusters by distance
         slice_data_updated = update_cluster_numbers(slice_data_updated)
         #Get cluster-level statistic
@@ -238,7 +242,7 @@ def output_turfs(form):
         #Get cluster level stats
         cluster_totals = get_cluster_totals(slice_data_updated)
 
-
+        print 'were close'
         #Remove clusters that are too small
         for i in cluster_totals.itertuples():
             min_size = .45 * turf_size
@@ -263,7 +267,7 @@ def output_turfs(form):
 
         #Read cluster data
         data = pd.read_excel(folder_name + "/temp_folder/Cluster_data.xlsx")
-
+        print 'making pdf'
         #Create a PDF file
         pdf = FPDF()
         
@@ -297,6 +301,7 @@ def output_turfs(form):
 
         #Save the PDF
         pdf.output(folder_name + '/temp_folder/Turfs.pdf', 'F')
+        print 'pdf saved'
         
 
         
@@ -308,10 +313,16 @@ def output_turfs(form):
 
         #Scroll through list of clusters and write the list to PDF
         for i in range(max_cluster + 1):
-            write_cluster(pdf,data,i)
+            print i
+            try:
+                write_cluster(pdf,data,i)
+            except:
+                print data[data["Cluster"]==i]
+        print 'pdf 2 saved'
 
         #Write sheets to the PDF
         pdf.output(folder_name + '/temp_folder/Sheets.pdf', 'F')
+        print 'pdf 3 saved'
         
 
         #Read cluster totals file
