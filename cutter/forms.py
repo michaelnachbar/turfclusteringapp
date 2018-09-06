@@ -12,6 +12,8 @@ class CutterForm(forms.Form):
     email = forms.CharField(max_length=50,required=True)
     turf_count = forms.IntegerField(required=True)
     turf_size = forms.IntegerField(required=True)
+    extra_filters = forms.CharField(max_length=500,required=False)
+    include_nonvoters = forms.BooleanField(help_text="Only applicable with extra filters",required=False)
 
     """def clean(self):
         cleaned_data = super(CutterForm, self).clean()
@@ -23,6 +25,11 @@ class CutterForm(forms.Form):
         if not email:
             raise forms.ValidationError('You have to write something!')"""
 
+class BondCutterForm(forms.Form):
+    center_address = forms.CharField(max_length=50,required=True)
+    email = forms.CharField(max_length=50,required=True)
+    est_canvassers = forms.IntegerField(required=True)
+    percent_affordable = forms.IntegerField(required=True,help_text = "(Out of 100. If you are unsure put 70.)")
 
 
 class NewRegionForm(forms.Form):

@@ -44,6 +44,12 @@ def output_turfs(form):
     region = form['region_name']
     center_address = form['center_address'] + " " + region
     email = form['email']
+    if form['extra_filters']:
+        extra_filters = form['extra_filters']
+    else:
+        extra_filters = None
+    include_nonvoters = form['include_nonvoters']
+
     try:
         #send_error_email(email)
         
@@ -60,8 +66,34 @@ def output_turfs(form):
         #data = pd.read_excel("Updated_data.xlsx")
         #data = pd.read_excel("District_7_data.xlsx")
         data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
+        print len(data)
+        if extra_filters:
+            query = """
+            SELECT
+                distinct address
+            FROM
+                `voter_data_{region}` vd 
+            WHERE
+                {extra_filters}
+            """.format(region = region,extra_filters = extra_filters)
+            good_addresses = read_mysql_data(query)
+            print len(good_addresses)
+            if not include_nonvoters:
+                columns = data.columns
+                data = data.merge(good_addresses,how="inner",left_on="orig_address",right_on="address")
+                data = data.loc[:,columns]
+                print len(data)
+            else:
+                columns = data.columns
+                v_data = data.loc[data["LAT"]<>0,:]
+                nv_data = data.loc[data["LAT"]==0,:]
+                v_data = v_data.merge(good_addresses,how="inner",left_on="orig_address",right_on="address")
+                v_data = v_data.loc[:,columns]
+                data = v_data.merge(nv_data)
+                v_data,nv_data = None,None
         #data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
 
+        print data
 
         #Based on turf size and central point take the X closest addresses
         make_filtered_file(data,center_address,num_clusters,turf_size,folder_name + "/Test_filter.xlsx")
@@ -432,7 +464,7 @@ def add_region(form):
 
         new_data=None
 
-        filecount = 1+len(new_addresses) / 1000
+        filecount = 1+len(new_addresses) / 100
         new_addresses["complete_address"] = new_addresses["address"] + ", " + new_addresses["city"] + ", " + \
             new_addresses["state"] + ", " + new_addresses["zip"].map(str)
 
@@ -440,7 +472,7 @@ def add_region(form):
             try:
                 time.sleep(num%100)
                 temp_filename = "dummy{num}.csv".format(num=num)
-                new_addresses.loc[num*1000:num*1000+1000,("address","city","state","zip")].to_csv(temp_filename)
+                new_addresses.loc[num*100:num*100+99,("address","city","state","zip")].to_csv(temp_filename)
                 z=censusgeocode.addressbatch(temp_filename)
                 os.remove(temp_filename)
                 print num
@@ -512,6 +544,7 @@ def add_region(form):
         
         combo_data["NUMBER"]  = combo_data["NUMBER"].str.replace("[^0-9]","")
         combo_data["NUMBER"] = combo_data["NUMBER"].fillna(0)
+        combo_data.loc[combo_data["NUMBER"]=="","NUMBER"] = 0
         combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
         combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
             combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
