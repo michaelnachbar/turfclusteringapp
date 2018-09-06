@@ -36,6 +36,8 @@ import json
 import re
 import pymysql
 import sqlalchemy
+import copy
+
 
 import httplib2
 
@@ -887,6 +889,17 @@ def make_sqlalchemy_connection():
     password = settings.DATABASES['default']['PASSWORD']
     return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@localhost:3306/canvas_cutting'.format(user=user,password=password))
 
+def make_mysqldb_connection():
+    x = MySQLdb.connect(host='localhost', \
+                    user=settings.DATABASES['default']['USER'], \
+                    passwd=settings.DATABASES['default']['PASSWORD'], \
+                    db="canvas_cutting")
+    x = MySQLdb.connect(host="159.89.185.59", \
+                    user="username", \
+                    passwd="password", \
+                    db="canvas_cutting")
+    return x
+
 def execute_mysql(statement):
     conn = make_mysql_connection(True)
     c=conn.cursor()
@@ -908,8 +921,11 @@ def write_mysql_data(df,table_name,region,if_exists='append',better_append=False
         id_range = range(max_id+1,max_id + len(df) + 1)
         df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,index_label=id_range) 
 
-def read_mysql_data(query):
-    con = make_sqlalchemy_connection()
+def read_mysql_data(query,alchemy=True):
+    if alchemy:
+        con = make_sqlalchemy_connection()
+    else:
+        con = make_mysqldb_connection()
     return pd.read_sql(query,con)
 
 def write_json_data(df,json_columns,region):
@@ -1088,3 +1104,305 @@ def replace_list(df,**kwargs):
         df.loc[df["full_street"]==row.old_address,"address"] = \
             df.loc[df["full_street"]==row.old_address,"address"].apply(lambda s: s.replace(row.old_address,row.new_address))
     return df
+
+
+def matchmaker(d1,d2):
+    guys = sorted(d1.keys())
+    gals = sorted(d2.keys())
+    guysfree = guys[:]
+    engaged  = {}
+    guyprefers2 = copy.deepcopy(d1)
+    galprefers2 = copy.deepcopy(d2)
+    while guysfree:
+        guy = guysfree.pop(0)
+        guyslist = guyprefers2[guy]
+        gal = guyslist.pop(0)
+        fiance = engaged.get(gal)
+        if not fiance and fiance != 0:
+            # She's free
+            engaged[gal] = guy
+            #print("  %s and %s" % (guy, gal))
+        else:
+            # The bounder proposes to an engaged lass!
+            galslist = galprefers2[gal]
+            if galslist.index(fiance) > galslist.index(guy):
+                # She prefers new guy
+                engaged[gal] = guy
+                #print("  %s dumped %s for %s" % (gal, fiance, guy))
+                if guyprefers2[fiance]:
+                    # Ex has more girls to try
+                    guysfree.append(fiance)
+            else:
+                # She is faithful to old fiance
+                if guyslist:
+                    # Look again
+                    guysfree.append(guy)
+    return engaged
+
+
+def mile_distance(row,**kwargs):
+    lat = kwargs["coords"][0]
+    lon = kwargs["coords"][1]
+    dist = ((row["LAT"] - lat)**2 + (row["LON"] - lon)**2)**.5
+    return 69* dist
+
+
+def add_score(row,**kwargs):
+    row["score"] = -1 * row["distance"]
+    if row["Unit_Count"] > 0:
+        row["score"] += 2* min(row["registered_voters"] / row["Unit_Count"],1)
+        row["score"] += 2* min(row["16_general_voters"] / row["Unit_Count"],1)
+        row["score"] += 5* min(row["16_primary_first_timers"] / row["Unit_Count"],1)
+    return row["score"]
+    return 69* dist
+
+
+def read_afford_units(coords):
+    afford_units = pd.read_excel("Affordable Apartments - Bond Canvassing.xls")
+    afford_units["distance"] = afford_units.apply(mile_distance,coords=coords,axis=1)
+    afford_units["registered_voters"] = afford_units["registered_voters"].fillna(0)
+    afford_units["16_primary_first_timers"] = afford_units["16_primary_first_timers"].fillna(0)
+    afford_units["16_general_voters"] = afford_units["16_general_voters"].fillna(0)
+    afford_units["score"] = afford_units.apply(add_score,axis=1)
+    afford_units = afford_units.sort_values("score",ascending=False)
+    afford_units = afford_units[afford_units["Unit_Count"]>5]
+    afford_units["bigcount"] = afford_units["Unit_Count"].map(int) / 70
+    afford_units["bigcount"] = afford_units["bigcount"].map(int)
+    return afford_units
+
+
+def split_afford_units(afford_units):
+    big_units = afford_units[afford_units["bigcount"]>0].reset_index()
+    small_units = afford_units[afford_units["bigcount"]==0].reset_index()
+    big_units["smallcount"] = big_units["Unit_Count"]/20
+    big_units["smallcount"] = big_units["smallcount"].map(int)
+    small_units["smallcount"] = small_units["Unit_Count"]/10
+    small_units["smallcount"] = small_units["smallcount"].map(int)
+    return big_units,small_units
+
+def main_backup_afford_units(big_afford_units,est_canvassers,percent_affordable):
+    count = 0
+    for ind,row in big_afford_units.iterrows():
+        count += row["bigcount"]
+        if count >= percent_affordable * (est_canvassers/2) * (1 - percent_affordable):
+            main_afford_units = big_afford_units.loc[:ind,:]
+            backup_afford_units = big_afford_units.loc[1+ind:1+2*ind]
+            return main_afford_units,backup_afford_units
+
+def get_bonus_afford_units(small_afford_units,main_afford_units):
+    count = 0
+    for ind,row in small_afford_units.iterrows():
+        count += row["smallcount"]
+        if count >= sum(main_afford_units["smallcount"]):
+            return small_afford_units.loc[:ind,:]
+            break
+
+def get_market_rate_units(coords,afford_units):
+    market_query="""
+    SELECT
+        address
+        ,LAT
+        ,LON
+    FROM
+        cutter_canvas_data ccd
+    WHERE
+        ccd.lat between {lat} - .05 and {lat} + .05
+        and ccd.lon between {lon} -.05 and {lon} + .05
+        and region = 'Austin, TX'
+    """.format(lat = coords[0],lon = coords[1])
+
+    market_addresses = read_mysql_data(market_query)
+    #print market_addresses
+    
+
+    #Remove affordable complexes
+    address_join = market_addresses.merge(afford_units,how="left",left_on="address",right_on="Address")
+    market_addresses = address_join.loc[pd.isnull(address_join["Address"]),("address","LAT_x","LON_x")]
+    market_addresses.columns = ["address","LAT","LON"]
+
+    market_address_string = "'" + "','".join(i for i in market_addresses["address"]) + "'"
+
+    market_voter_query = """
+    SELECT 
+        address
+        ,COUNT(DISTINCT VUIDNO) registered_voters
+        ,SUM(CASE WHEN P16PARTY = 'DEMO' and P14PARTY = '' and P12PARTY = '' THEN 1 ELSE 0 END) 16_primary_first_timers
+        ,SUM(CASE WHEN G16VOTED <> '0' THEN 1 ELSE 0 END) 16_general_voters
+    FROM 
+        `voter_data_Austin, TX` 
+    where 
+        address in ({address_list})
+    GROUP BY
+        address
+    HAVING registered_voters >= 10
+    """.format(address_list=market_address_string)  
+
+
+    market_voter_counts = read_mysql_data(market_voter_query,False)
+    market_rate_units = market_addresses.merge(market_voter_counts,how="inner",on="address")
+    return market_rate_units
+
+def clean_market_rate_units(market_rate_units,coords):
+    market_rate_units["distance"] = market_rate_units.apply(mile_distance,coords=coords,axis=1)
+    market_rate_units["registered_voters"] = market_rate_units["registered_voters"].fillna(0)
+    market_rate_units["16_primary_first_timers"] = market_rate_units["16_primary_first_timers"].fillna(0)
+    market_rate_units["16_general_voters"] = market_rate_units["16_general_voters"].fillna(0)
+    market_rate_units["Unit_Count"] = market_rate_units["registered_voters"]
+    market_rate_units["score"] = market_rate_units.apply(add_score,axis=1)
+    market_rate_units = market_rate_units.sort_values("score",ascending=False)
+    market_rate_units["bigcount"] = market_rate_units["Unit_Count"].map(int) / 70
+    market_rate_units["bigcount"] = market_rate_units["bigcount"].map(int)
+    market_rate_units["Description"] = "Market Rate"
+    market_rate_units["Apartment Title"] = ""
+    market_rate_units["Address"] = market_rate_units["address"]
+    return market_rate_units
+
+
+def split_market_rate_units(market_rate_units):
+    big_market_rate = market_rate_units.loc[market_rate_units["bigcount"]>0,:].reset_index()
+    small_market_rate = market_rate_units.loc[market_rate_units["bigcount"]==0,:].reset_index()
+    big_market_rate["smallcount"] = big_market_rate["Unit_Count"]/20
+    big_market_rate["smallcount"] = big_market_rate["smallcount"].map(int)
+    small_market_rate["smallcount"] = small_market_rate["Unit_Count"]/10
+    small_market_rate["smallcount"] = small_market_rate["smallcount"].map(int)
+    return big_market_rate,small_market_rate
+
+
+def main_backup_market_rate_units(big_market_rate_units,percent_affordable,est_canvassers):
+    count = 0
+    for ind,row in big_market_rate_units.iterrows():
+        count += row["bigcount"]
+        if count >= (1 - percent_affordable) * est_canvassers/2:
+            main_market_rate_units = big_market_rate_units.loc[:ind,:]
+            backup_market_rate_units = big_market_rate_units.loc[1+ind:1+2*ind]
+            return main_market_rate_units,backup_market_rate_units
+
+def get_bonus_market_rate_units(small_market_rate_units,main_market_rate_units):
+    count = 0
+    for ind,row in small_market_rate_units.iterrows():
+        count += row["smallcount"]
+        if count >= sum(main_market_rate_units["smallcount"]):
+            bonus_market_rate_units = small_market_rate_units.loc[:ind,:]
+            return bonus_market_rate_units
+
+
+def merge_units(df1,df2):
+    df1 = df1.loc[:,("Apartment Title","Address","Unit_Count","Description","registered_voters", \
+                 "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount")]
+    df2 = df2.loc[:,("Apartment Title","Address","Unit_Count","Description","registered_voters", \
+                     "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount")]
+    df1 = df1.append(df2).reset_index()
+    return df1
+
+def match_frames(df1,df2,colname=None):
+    d1 = {}
+    for j,i in df1.iterrows():
+        temp_row = []
+        for k,m in df2.iterrows():
+            score = 0
+            score += 69*((i["LAT"] - m["LAT"]) ** 2 + (i["LON"] - m["LON"])**2)**.5
+            if colname:
+                score += .5* abs(i[colname] - m[colname])
+            temp_row.append([k,score])
+        temp_row = sorted(temp_row,key = lambda x: x[1])
+        #print [ind[1] for ind in temp_row]
+        d1[j] = [ind[0] for ind in temp_row]
+    d2 = {}
+    for j,i in df2.iterrows():
+        temp_row = []
+        for k,m in df1.iterrows():
+            score = 0
+            score += 69*((i["LAT"] - m["LAT"]) ** 2 + (i["LON"] - m["LON"])**2)**.5
+            if colname:
+                score += .5* abs(i[colname] - m[colname])
+            temp_row.append([k,score])
+        temp_row = sorted(temp_row,key = lambda x: x[1])
+        d2[j] = [ind[0] for ind in temp_row]
+    matches = matchmaker(d2,d1)
+    return matches
+
+
+def bonus_match(main_units,small_units):
+    big_unit_array = []
+    for ind,row in main_units.iterrows():
+        for n in range(row.smallcount):
+            big_unit_array.append([ind,n,row.LAT,row.LON])
+    big_unit_match = pd.DataFrame(big_unit_array, columns=["ind","sub_ind","LAT","LON"])
+    small_unit_array = []
+    for ind,row in small_units.iterrows():
+        for n in range(row.smallcount):
+            small_unit_array.append([ind,n,row.LAT,row.LON])
+    small_unit_array = small_unit_array[:len(big_unit_array)]
+    for i in range(min(0,len(big_unit_array) - len(small_unit_array))):
+        small_unit_array.append([-1,-1,0,0])
+    small_unit_match = pd.DataFrame(small_unit_array,columns=["ind","sub_ind","LAT","LON"])
+    return big_unit_match,small_unit_match
+
+def get_frame(row,main_units,bonus_units,big_unit_match,small_unit_match,small_dict):
+    empty_frame = pd.DataFrame(columns = main_units.columns)
+    filt = big_unit_match.loc[big_unit_match["ind"]==row,:]
+    for ind,row in filt.iterrows():
+        match_ind = small_dict[ind]
+        if small_unit_match.loc[match_ind,"sub_ind"] == 0:
+            small_ind = small_unit_match.loc[match_ind,"ind"]
+            #print small_units.loc[small_ind,:]
+            empty_frame = empty_frame.append(bonus_units.loc[small_ind,:])
+    return empty_frame.reset_index()
+
+def make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict):
+    pdf = FPDF()
+
+    for ind,row in main_units.iterrows():
+        backup_ind = backup_dict[ind]
+
+
+
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 35)
+        pdf.cell(0, 20, 'Team # ' + str(1+ind) +"({num} team members)".format(num=str(2*row["bigcount"])),ln=2,align='C')
+
+        #Set the main complex
+        pdf.set_font('Arial', 'B', 20)
+        pdf.cell(0, 10, 'Main Complex (go here first):',ln=2)
+        pdf.set_font('Arial',"", 14)
+
+        apt_title = main_units.loc[ind,"Apartment Title"]
+        description = main_units.loc[ind,"Description"]
+        address = main_units.loc[ind,"Address"]
+
+
+        pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
+        pdf.cell(0, 7, description,ln=2)
+        pdf.cell(0, 12, "Check if you visited _____  Approx. what % of units did you visit ______",ln=2)
+
+        #Set the backup complex
+        pdf.set_font('Arial', 'B', 20)
+        pdf.cell(0, 10, "Backup Complex (ONLY if you can't access main):",ln=2)
+        pdf.set_font('Arial',"", 14)
+
+        apt_title = backup_units.loc[backup_ind,"Apartment Title"]
+        description = backup_units.loc[backup_ind,"Description"]
+        address = backup_units.loc[backup_ind,"Address"]
+
+
+        pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
+        pdf.cell(0, 7, description,ln=2)
+        pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
+
+        #Set the bonus complexes
+        bonus_frame = get_frame(ind,main_units,bonus_units,main_unit_match,bonus_unit_match,bonus_dict)
+        pdf.set_font('Arial', 'B', 20)
+        pdf.cell(0, 10, "Bonus Complexes",ln=2)
+        pdf.set_font('Arial',"", 14)
+
+        for bonus_ind,bonus_row in bonus_frame.iterrows():
+            apt_title = bonus_row["Apartment Title"]
+            description = bonus_row["Description"]
+            address = bonus_row["Address"]
+
+
+            pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
+            pdf.cell(0, 7, description,ln=2)
+            pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
+
+    pdf.output('Sample page.pdf', 'F')
