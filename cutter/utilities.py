@@ -1150,22 +1150,36 @@ def mile_distance(row,**kwargs):
 def add_score(row,**kwargs):
     row["score"] = -1 * row["distance"]
     if row["Unit_Count"] > 0:
-        row["score"] += 2* min(row["registered_voters"] / row["Unit_Count"],1)
-        row["score"] += 2* min(row["16_general_voters"] / row["Unit_Count"],1)
-        row["score"] += 5* min(row["16_primary_first_timers"] / row["Unit_Count"],1)
+        row["score"] += .5* min(row["registered_voters"] / row["Unit_Count"],1)
+        row["score"] += .5* min(row["16_general_voters"] / row["Unit_Count"],1)
+        row["score"] += 1.25* min(row["16_primary_first_timers"] / row["Unit_Count"],1)
     return row["score"]
     return 69* dist
 
 
-def read_afford_units(coords):
+def remove_units(afford_units,skip_addresses):
+    col = skip_addresses.columns[0].upper()
+    skip_addresses = skip_addresses.rename(columns = {skip_addresses.columns[0]: col})
+    afford_columns = afford_units.columns
+    skip_addresses[col] = skip_addresses[col].str.upper()
+    afford_units = afford_units.merge(skip_addresses,left_on="Address",right_on=col,how="left")
+    afford_units = afford_units.loc[pd.isnull(afford_units[col]),afford_columns]
+    return afford_units
+
+
+def read_afford_units(coords,skip_addresses):
     afford_units = pd.read_excel("Affordable Apartments - Bond Canvassing.xls")
     afford_units["distance"] = afford_units.apply(mile_distance,coords=coords,axis=1)
     afford_units["registered_voters"] = afford_units["registered_voters"].fillna(0)
     afford_units["16_primary_first_timers"] = afford_units["16_primary_first_timers"].fillna(0)
     afford_units["16_general_voters"] = afford_units["16_general_voters"].fillna(0)
+    
     afford_units["score"] = afford_units.apply(add_score,axis=1)
+    afford_units["score"] += 3
     afford_units = afford_units.sort_values("score",ascending=False)
     afford_units = afford_units[afford_units["Unit_Count"]>5]
+    afford_units = remove_units(afford_units,skip_addresses)
+
     afford_units["bigcount"] = afford_units["Unit_Count"].map(int) / 70
     afford_units["bigcount"] = afford_units["bigcount"].map(int)
     return afford_units
@@ -1184,7 +1198,7 @@ def main_backup_afford_units(big_afford_units,est_canvassers,percent_affordable)
     count = 0
     for ind,row in big_afford_units.iterrows():
         count += row["bigcount"]
-        if count >= percent_affordable * (est_canvassers/2) * (1 - percent_affordable):
+        if count >= percent_affordable * (est_canvassers/2):
             main_afford_units = big_afford_units.loc[:ind,:]
             backup_afford_units = big_afford_units.loc[1+ind:1+2*ind]
             return main_afford_units,backup_afford_units
@@ -1197,10 +1211,12 @@ def get_bonus_afford_units(small_afford_units,main_afford_units):
             return small_afford_units.loc[:ind,:]
             break
 
-def get_market_rate_units(coords,afford_units):
+def get_market_rate_units(coords,afford_units,skip_addresses):
+    skip_address_string = "'" + "','".join(skip_addresses.iloc[:,0]) + "'"
+
     market_query="""
     SELECT
-        address
+        distinct address
         ,LAT
         ,LON
     FROM
@@ -1209,7 +1225,8 @@ def get_market_rate_units(coords,afford_units):
         ccd.lat between {lat} - .05 and {lat} + .05
         and ccd.lon between {lon} -.05 and {lon} + .05
         and region = 'Austin, TX'
-    """.format(lat = coords[0],lon = coords[1])
+        and address not in ({skip_address_string})
+    """.format(lat = coords[0],lon = coords[1],skip_address_string=skip_address_string)
 
     market_addresses = read_mysql_data(market_query)
     #print market_addresses
@@ -1288,9 +1305,9 @@ def get_bonus_market_rate_units(small_market_rate_units,main_market_rate_units):
 
 def merge_units(df1,df2):
     df1 = df1.loc[:,("Apartment Title","Address","Unit_Count","Description","registered_voters", \
-                 "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount")]
+                 "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount","score")]
     df2 = df2.loc[:,("Apartment Title","Address","Unit_Count","Description","registered_voters", \
-                     "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount")]
+                     "16_primary_first_timers","16_general_voters","LAT","LON","smallcount","bigcount","score")]
     df1 = df1.append(df2).reset_index()
     return df1
 
@@ -1347,62 +1364,109 @@ def get_frame(row,main_units,bonus_units,big_unit_match,small_unit_match,small_d
             small_ind = small_unit_match.loc[match_ind,"ind"]
             #print small_units.loc[small_ind,:]
             empty_frame = empty_frame.append(bonus_units.loc[small_ind,:])
-    return empty_frame.reset_index()
+    return empty_frame.reset_index(drop=True)
 
-def make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict):
+def make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict,folder_name):
     pdf = FPDF()
 
     for ind,row in main_units.iterrows():
-        backup_ind = backup_dict[ind]
+        for count in range(row["bigcount"]):
+            backup_ind = backup_dict[ind]
 
 
 
-        pdf.add_page()
-        pdf.set_font('Arial', 'B', 35)
-        pdf.cell(0, 20, 'Team # ' + str(1+ind) +"({num} team members)".format(num=str(2*row["bigcount"])),ln=2,align='C')
+            pdf.add_page()
+            pdf.set_font('Arial', 'B', 35)
+            pdf.cell(0, 20, 'Team # ' + str(1+ind) +"({num} team members)".format(num=str(min(2*row["bigcount"],8))),ln=2,align='C')
 
-        #Set the main complex
-        pdf.set_font('Arial', 'B', 20)
-        pdf.cell(0, 10, 'Main Complex (go here first):',ln=2)
-        pdf.set_font('Arial',"", 14)
+            #Set the main complex
+            pdf.set_font('Arial', 'B', 20)
+            pdf.cell(0, 10, 'Main Complex (go here first):',ln=2)
+            pdf.set_font('Arial',"", 14)
 
-        apt_title = main_units.loc[ind,"Apartment Title"]
-        description = main_units.loc[ind,"Description"]
-        address = main_units.loc[ind,"Address"]
-
-
-        pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
-        pdf.cell(0, 7, description,ln=2)
-        pdf.cell(0, 12, "Check if you visited _____  Approx. what % of units did you visit ______",ln=2)
-
-        #Set the backup complex
-        pdf.set_font('Arial', 'B', 20)
-        pdf.cell(0, 10, "Backup Complex (ONLY if you can't access main):",ln=2)
-        pdf.set_font('Arial',"", 14)
-
-        apt_title = backup_units.loc[backup_ind,"Apartment Title"]
-        description = backup_units.loc[backup_ind,"Description"]
-        address = backup_units.loc[backup_ind,"Address"]
+            apt_title = main_units.loc[ind,"Apartment Title"]
+            description = main_units.loc[ind,"Description"]
+            address = main_units.loc[ind,"Address"]
 
 
-        pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
-        pdf.cell(0, 7, description,ln=2)
-        pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
+            pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
+            pdf.cell(0, 7, description,ln=2)
+            pdf.cell(0, 12, "Check if you visited _____  Approx. what % of units did you visit ______",ln=2)
 
-        #Set the bonus complexes
-        bonus_frame = get_frame(ind,main_units,bonus_units,main_unit_match,bonus_unit_match,bonus_dict)
-        pdf.set_font('Arial', 'B', 20)
-        pdf.cell(0, 10, "Bonus Complexes",ln=2)
-        pdf.set_font('Arial',"", 14)
+            #Set the backup complex
+            pdf.set_font('Arial', 'B', 20)
+            pdf.cell(0, 10, "Backup Complex (ONLY if you can't access main):",ln=2)
+            pdf.set_font('Arial',"", 14)
 
-        for bonus_ind,bonus_row in bonus_frame.iterrows():
-            apt_title = bonus_row["Apartment Title"]
-            description = bonus_row["Description"]
-            address = bonus_row["Address"]
+            apt_title = backup_units.loc[backup_ind,"Apartment Title"]
+            description = backup_units.loc[backup_ind,"Description"]
+            address = backup_units.loc[backup_ind,"Address"]
 
 
             pdf.cell(0, 7, apt_title + ",  " + address,ln=2)
             pdf.cell(0, 7, description,ln=2)
             pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
 
-    pdf.output('Sample page.pdf', 'F')
+            #Set the bonus complexes
+            bonus_frame = get_frame(ind,main_units,bonus_units,main_unit_match,bonus_unit_match,bonus_dict)
+            pdf.set_font('Arial', 'B', 20)
+            pdf.cell(0, 10, "Bonus Complexes",ln=2)
+            pdf.set_font('Arial',"", 14)
+
+            for bonus_ind,bonus_row in bonus_frame.iterrows():
+                apt_title = bonus_row["Apartment Title"]
+                description = bonus_row["Description"]
+                address = bonus_row["Address"]
+
+
+                pdf.cell(0, 7, apt_title.encode('utf8') + ",  " + address.encode('utf8'),ln=2)
+                pdf.cell(0, 7, description,ln=2)
+                pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
+
+    pdf.output(folder_name + '/temp_folder/Turf list.pdf', 'F')
+
+def bond_assign_pdf(main_units,folder_name):
+    pdf = FPDF(format='letter', unit='in',orientation='P')
+    
+    pdf.add_page()
+    for row,temp in main_units.iterrows():
+
+        pdf.set_font('Times','B',10.0) 
+        th = pdf.font_size
+        pdf.cell(1.75, th, "Team # " + str(row), border=1)
+        
+        pdf.set_font('Times','',10.0) 
+        pdf.cell(1.75, th, str(int(temp.registered_voters)) + " registered voters", border=1)
+        pdf.cell(2, th, str(temp.Address)[:24], border=1)
+        pdf.cell(1.75, th, str(temp.Description), border=1)
+        
+        pdf.ln(th)
+        pdf.cell(1.75, th, "Team Captain", border=1)
+        pdf.cell(1.75, th, "Team Member 2", border=1)
+        #Depending on turf size and walking distance assign a team 2 members or 4 members
+        if temp["bigcount"] > 1:
+            pdf.cell(2, th, "Team Member 3", border=1)
+            pdf.cell(1.75, th, "Team Member 4", border=1)
+        if temp["bigcount"] > 2:
+            pdf.ln(th)
+            pdf.cell(1.75, th, "", border=1)
+            pdf.cell(1.75, th, "", border=1)
+        if temp["bigcount"] > 3:
+            pdf.cell(2, th, "", border=1)
+            pdf.cell(1.75, th, "", border=1)
+        if temp["bigcount"] > 2:
+            pdf.ln(th)
+            pdf.cell(1.75, th, "Team Captain 2", border=1)
+            pdf.cell(1.75, th, "Team Member 6", border=1)
+        if temp["bigcount"] > 3:
+            pdf.cell(2, th, "Team Member 7", border=1)
+            pdf.cell(1.75, th, "Team Member 8", border=1)
+        pdf.ln(th)
+        pdf.cell(1.75, th, "", border=1)
+        pdf.cell(1.75, th, "", border=1)
+        if temp["bigcount"] > 1:
+            pdf.cell(2, th, "", border=1)
+            pdf.cell(1.75, th, "", border=1)
+        
+        pdf.ln(th)
+    pdf.output(folder_name + '/temp_folder/Assign Sheet.pdf', 'F')

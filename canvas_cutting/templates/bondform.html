@@ -1,0 +1,17 @@
+{% if messages %}
+<ul class="messages">
+    {% for message in messages %}
+    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<h1>DSA Turf Cutting App - Bond</h1>
+<body>This is an app for generating turfs for canvasses for the Housing Bond.
+</body>
+
+<form action="/bondcutter/" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p}}
+    <input type="submit" value="Submit" />
+</form>

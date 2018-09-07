@@ -1,9 +1,9 @@
 from django.shortcuts import render
-from .forms import CutterForm,NewRegionForm,UpdateRegionForm
+from .forms import CutterForm,NewRegionForm,UpdateRegionForm,BondCutterForm
 from django.contrib import messages
 
 
-from tasks import output_turfs,add_region,region_update
+from tasks import output_turfs,add_region,region_update,bond_turfs
 
 from cutter.models import region,region_progress
 
@@ -20,6 +20,24 @@ def cutter(request):
     else:
         form = CutterForm()
     return render(request,'form.html', {'form': form})
+
+def bondcutter(request):
+    if request.method == 'POST':
+        form = BondCutterForm(request.POST,request.FILES)
+        if 'skip_addresses_file' in request.POST and request.POST['skip_addresses_file']:
+            with open('bond_skip_addresses.csv', 'wb+') as destination:
+                for chunk in request.FILES['skip_addresses_file'].chunks():
+                    destination.write(chunk)
+        #if form.is_valid():
+        bond_turfs.delay(form.data)
+        messages.success(request, 'Thank you for submitting. You will get your turfs by email in 30 minutes or so.')
+        print 'hey this is running'
+        #else:
+        #    print 'this is lame'
+        #print form
+    else:
+        form = BondCutterForm()
+    return render(request,'bondform.html', {'form': form})
 
 
 def new_region(request):

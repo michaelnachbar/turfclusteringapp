@@ -30,7 +30,7 @@ write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge
 write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list, \
 send_error_report,send_nofile_email, matchmaker, mile_distance, add_score, get_coordinates, read_afford_units, split_afford_units, \
 main_backup_afford_units, get_bonus_afford_units, get_market_rate_units, clean_market_rate_units, split_market_rate_units, \
-main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf
+main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf, bond_assign_pdf
 
 from cutter.models import region_progress
 
@@ -731,35 +731,55 @@ def region_update(form):
 @shared_task
 def bond_turfs(form):
 
+    folder_name = 'temp_folder_' + str(randint(1000,10000))
+
+
+    os.makedirs(folder_name)
+    os.makedirs(folder_name + '/temp_folder')
+
     center_address = form['center_address']
     email = form['email']
     est_canvassers = int(form['est_canvassers'])
     percent_affordable = float(form['percent_affordable']) / 100.0
     coords = get_coordinates(center_address,False)
+    skip_addresses = pd.read_csv("bond_skip_addresses.csv")
     print form
     print coords
     
-    afford_units = read_afford_units(coords)
+    afford_units = read_afford_units(coords,skip_addresses)
     big_afford_units,small_afford_units = split_afford_units(afford_units)
 
     main_afford_units,backup_afford_units = main_backup_afford_units(big_afford_units,est_canvassers,percent_affordable)
-    bonus_afford_units = get_bonus_afford_units(small_afford_units,main_afford_units)  
+    bonus_afford_units = get_bonus_afford_units(small_afford_units,main_afford_units)
+    
 
-    market_rate_units = get_market_rate_units(coords,afford_units)
+    market_rate_units = get_market_rate_units(coords,afford_units,skip_addresses)
     market_rate_units = clean_market_rate_units(market_rate_units,coords)
     big_market_rate_units,small_market_rate_units = split_market_rate_units(market_rate_units)
+    
 
     main_market_rate_units,backup_market_rate_units = main_backup_market_rate_units(big_market_rate_units,percent_affordable,est_canvassers)
     bonus_market_rate_units = get_bonus_market_rate_units(small_market_rate_units,main_market_rate_units)
+    
 
     main_units = merge_units(main_afford_units,main_market_rate_units)
+    main_units = main_units.sort_values("score",ascending=False).reset_index(drop=True)
     backup_units = merge_units(backup_afford_units,backup_market_rate_units)
     bonus_units = merge_units(bonus_afford_units,bonus_market_rate_units)
+    
 
     backup_dict = match_frames(main_units,backup_units,colname = "bigcount")
     main_unit_match,bonus_unit_match = bonus_match(main_units,bonus_units)
     bonus_dict = match_frames(main_unit_match,bonus_unit_match)
 
-    make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict)
+    make_pdf(main_units,backup_units,bonus_units,backup_dict,main_unit_match,bonus_unit_match,bonus_dict,folder_name)
+    bond_assign_pdf(main_units,folder_name)
+
+    #Email 3 pdfs to email address specified
+    send_email(email,folder_name)
+    print 'sent email'
+
+    #Delete the temp folder
+    shutil.rmtree(folder_name)
 
     return

@@ -30,6 +30,7 @@ class BondCutterForm(forms.Form):
     email = forms.CharField(max_length=50,required=True)
     est_canvassers = forms.IntegerField(required=True)
     percent_affordable = forms.IntegerField(required=True,help_text = "(Out of 100. If you are unsure put 70.)")
+    skip_addresses_file = forms.FileField(required=False)
 
 
 class NewRegionForm(forms.Form):
