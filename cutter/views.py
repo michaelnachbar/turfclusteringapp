@@ -1,6 +1,9 @@
 from django.shortcuts import render
-from .forms import CutterForm,NewRegionForm,UpdateRegionForm,BondCutterForm
+from .forms import CutterForm,NewRegionForm,UpdateRegionForm,BondCutterForm,AttendenceForm,FieldForm
 from django.contrib import messages
+from django.http import HttpResponseRedirect 
+from django.core.urlresolvers import reverse
+
 
 
 from tasks import output_turfs,add_region,region_update,bond_turfs
@@ -78,3 +81,43 @@ def update_region(request):
     else:
         form = UpdateRegionForm()
     return render(request,'update_form.html', {'form': form})
+
+
+def attendence2(request,id="q"):
+    if request.method == 'POST':
+        print id
+        print 'post___________________________'
+        form = FieldForm(request.POST)
+        if form.is_valid():
+            upload_attendence_file.delay(form.data,id)
+            messages.success(request, 'Thank you for submitting. Look for an email in a few minutes with next steps.')
+    else:
+        print id
+        form = FieldForm()
+        #print form
+        print '_____________________________'
+    return render(request,'attendence2.html', {'form': form})
+
+
+def attendence(request,id="q"):
+    if request.method == 'POST':
+        print id
+        print request.POST
+        #form = AttendenceForm(request.POST)        
+        form = AttendenceForm(request.POST,request.FILES)
+        if form.is_valid():
+            #region_update.delay(form.data)
+            with open('temp_attendence.csv', 'wb+') as destination:
+                for chunk in request.FILES['attendence_file'].chunks():
+                    destination.write(chunk)
+            return HttpResponseRedirect('/attendence2/' + id + "/")
+
+        messages.success(request, 'Thank you for submitting. Look for an email in a few minutes with next steps.')
+    else:
+        form = AttendenceForm()
+        print id
+        print "__________"
+    return render(request,'attendence.html', {'form': form,'google_id': id})
+
+
+

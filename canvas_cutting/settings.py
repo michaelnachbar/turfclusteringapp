@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/1.9/ref/settings/
 import os
 from local_settings import *
 
+
+
+
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -40,7 +43,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'canvas_cutting',
     'cutter',
+    'airtable_etl',
 ]
+
+CELERY_IMPORTS = (
+    'airtable_etl.tasks',
+)
 
 MIDDLEWARE_CLASSES = [
     'django.middleware.security.SecurityMiddleware',

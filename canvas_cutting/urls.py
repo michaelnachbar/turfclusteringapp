@@ -24,4 +24,11 @@ urlpatterns = [
     url(r'^bondcutter/', 'cutter.views.bondcutter'),
     url(r'^newregion/', 'cutter.views.new_region'),
     url(r'^updateregion/', 'cutter.views.update_region'),
+    url(r'^attendence/(.*?)/', 'airtable_etl.views.attendence'), 
+    url(r'^attendence/(.*?)', 'airtable_etl.views.attendence'), 
+    url(r'^attendence/', 'airtable_etl.views.attendence'),
+    url(r'^attendence2/(.*?)/', 'airtable_etl.views.attendence2'),
+    url(r'^attendence2/(.*?)', 'airtable_etl.views.attendence2'),    
+    url(r'^attendence2/', 'airtable_etl.views.attendence2'),
+    
 ]

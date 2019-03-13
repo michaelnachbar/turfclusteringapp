@@ -1,0 +1,18 @@
+{% if messages %}
+<ul class="messages">
+    {% for message in messages %}
+    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<h1>Upload Attendence Sheet</h1>
+<body>This is for uploading attendence sheets for DSA. Choose the columns in your file that match the Airtable fields.
+</body>
+
+
+<form action="" method="post">
+    {% csrf_token %}
+    {{ form.as_p}}
+    <input type="submit" value="Submit" />
+</form>
