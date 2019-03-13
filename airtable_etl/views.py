@@ -4,6 +4,8 @@ from django.contrib import messages
 from django.http import HttpResponseRedirect 
 from django.core.urlresolvers import reverse
 
+import pandas as pd
+
 
 
 from tasks import upload_attendence_file
@@ -11,12 +13,18 @@ from tasks import upload_attendence_file
 
 def attendence2(request,id="q"):
     if request.method == 'POST':
-        form = FieldForm(request.POST)
+        data = pd.read_csv('temp_attendence.csv')
+        headers = data.columns
+        headers = [('N/A','N/A')] + [(i,i) for i in headers]
+        form = FieldForm(request.POST,headers=headers)
         if form.is_valid():
             upload_attendence_file.delay(form.data,id)
             messages.success(request, 'Thank you for submitting. Look for an email in a few minutes with next steps.')
     else:
-        form = FieldForm()
+        data = pd.read_csv('temp_attendence.csv')
+        headers = data.columns
+        headers = [('N/A','N/A')] + [(i,i) for i in headers]
+        form = FieldForm(headers=headers)
     return render(request,'attendence2.html', {'form': form})
 
 
