@@ -8,7 +8,7 @@ from django.conf import settings
 def get_event_date(event_code):
     airtable_client = Airtable('app1TMHqTJRUWnrvB', 'Events', api_key=settings.EVENTS_API_KEY)
     try:
-        meeting_date = airtable_client.match('url', str(event_code))['fields']['Date']
+        meeting_date = airtable_client.match('Event Code', str(event_code))['fields']['Date']
     except:
         meeting_date = ""
     return meeting_date

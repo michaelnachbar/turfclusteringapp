@@ -29,7 +29,8 @@ def upload_attendence_file(form,id):
     attendance_file = update_columns(attendance_file,id)
     attendance_file = attendance_file.fillna("")
 
-    attendance_file["Meeting Date"] = event_date
+    if event_date:
+        attendance_file["Meeting Date"] = event_date
     attendance_file["Event Type"] = form["event_type"]
 
     airtable_connection.batch_insert(attendance_file.to_dict('records'))
