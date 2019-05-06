@@ -51,6 +51,7 @@ def rename_columns(attendance_file,csv_to_form_dict,form_to_airtable_dict):
 
 def parse_tf(s):
     ret = False
+    s = str(s)
     if s.upper() == "TRUE":
         ret = True
     if "Y" in s.upper():
