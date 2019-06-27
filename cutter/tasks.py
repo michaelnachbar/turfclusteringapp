@@ -30,7 +30,8 @@ write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge
 write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list, \
 send_error_report,send_nofile_email, matchmaker, mile_distance, add_score, get_coordinates, read_afford_units, split_afford_units, \
 main_backup_afford_units, get_bonus_afford_units, get_market_rate_units, clean_market_rate_units, split_market_rate_units, \
-main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf, bond_assign_pdf
+main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf, bond_assign_pdf, \
+get_apartment_list, populate_missing_lat_lon, iterate_apts, random_function, get_order, add_pages, upload_apartment_list
 
 from cutter.models import region_progress
 
@@ -781,6 +782,91 @@ def bond_turfs(form):
 
     #Delete the temp folder
     shutil.rmtree(folder_name)
+
+    return
+
+
+@shared_task
+def apt_turfs(form):
+    folder_name = 'temp_folder_' + str(randint(1000,10000))
+
+
+    os.makedirs(folder_name)
+    os.makedirs(folder_name + '/temp_folder')
+
+    center_address = form['center_address']
+    email = form['email']
+    est_canvas_teams = int(form['est_canvas_teams'])
+    center_coords = get_coordinates(center_address,False)
+    team_max = 45
+    skip_addresses = pd.read_csv("bond_skip_addresses.csv")
+    print 'Set cooords'
+
+    #Filter by region
+    #Filter by skip addresses
+
+
+    data = upload_apartment_list()
+    print 'Got apartment list'
+
+    
+
+    data = data.loc[:,["address","units","cost","year","LAT","LON"]]
+
+    #Fill in the missing year and cost with the averages
+    avgyear = np.mean(data.loc[pd.notnull(data["year"]),"year"].map(float))
+    avgcost = np.mean(data.loc[pd.notnull(data["cost"]),"cost"].map(float))
+    #print avgyear
+    data.loc[pd.isnull(data["cost"]),"cost"] = avgcost
+    #print data["year"]
+    data.loc[pd.isnull(data["year"]),"year"] = avgyear
+    print data["units"]
+    print 'updated data'
+
+
+    min_len = 99999999999999999999
+    for j in range(20):
+        [temp_data,team_table,temp_routes] = iterate_apts(data,center_coords,random_function,avgyear,avgcost,est_canvas_teams,team_max)
+        total_len = sum([i[-1] for i in temp_routes])/len(team_table)
+        if total_len<min_len:
+            min_len = total_len
+            min_data = temp_data.copy()
+            min_team = team_table.copy()
+            min_routes = temp_routes[:]
+
+
+    pdf = FPDF()
+
+    #Scroll through each team, label apaartment type, write PDFs 
+    for ind,row in min_team.iterrows():
+        teams = row.teams
+        temp_table = min_data[min_data["team"]==ind]
+        temp_table["order"] = get_order(min_routes[ind][0][1:])
+        temp_table["apt_type"] = "bonus"
+        temp_table["apt_sort"] = 2
+        big_apts = temp_table[temp_table["units"]>=team_max]
+        start = True
+        for ind1,row1 in big_apts.iterrows():
+            if start:
+                temp_table.at[ind1,"apt_type"] = "main"
+                temp_table.at[ind1,"apt_sort"] = 0
+                start = False
+            else:
+                temp_table.at[ind1,"apt_type"] = "backup"
+                temp_table.at[ind1,"apt_sort"] = 1
+        temp_table = temp_table.sort_values(by=["apt_sort","order"])
+        add_pages(temp_table,int(teams),pdf,ind)
+    pdf.output(folder_name + "/temp_folder/pdf.pdf")
+
+    #Email 3 pdfs to email address specified
+    send_email(email,folder_name)
+    print 'sent email'
+
+    #Delete the temp folder
+    shutil.rmtree(folder_name)
+
+        
+    
 
     return
 

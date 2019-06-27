@@ -35,6 +35,13 @@ class BondCutterForm(forms.Form):
     skip_addresses_file = forms.FileField(required=False)
 
 
+class AptCutterForm(forms.Form):
+    center_address = forms.CharField(max_length=50,required=True)
+    email = forms.CharField(max_length=50,required=True)
+    est_canvas_teams = forms.IntegerField(required=True)
+    skip_addresses_file = forms.FileField(required=False)
+
+
 class NewRegionForm(forms.Form):
     region_name = forms.CharField(max_length=50,required=True)
     email = forms.EmailField(max_length=254,required=True)

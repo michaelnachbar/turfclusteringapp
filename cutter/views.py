@@ -1,12 +1,12 @@
 from django.shortcuts import render
-from .forms import CutterForm,NewRegionForm,UpdateRegionForm,BondCutterForm,AttendenceForm,FieldForm
+from .forms import CutterForm,NewRegionForm,UpdateRegionForm,BondCutterForm,AttendenceForm,FieldForm,AptCutterForm
 from django.contrib import messages
 from django.http import HttpResponseRedirect 
 from django.core.urlresolvers import reverse
 
 
 
-from tasks import output_turfs,add_region,region_update,bond_turfs
+from tasks import output_turfs,add_region,region_update,bond_turfs, apt_turfs
 
 from cutter.models import region,region_progress
 
@@ -41,6 +41,25 @@ def bondcutter(request):
     else:
         form = BondCutterForm()
     return render(request,'bondform.html', {'form': form})
+
+
+def aptcutter(request):
+    if request.method == 'POST':
+        form = AptCutterForm(request.POST,request.FILES)
+        if 'skip_addresses_file' in request.POST and request.POST['skip_addresses_file']:
+            with open('apt_skip_addresses.csv', 'wb+') as destination:
+                for chunk in request.FILES['skip_addresses_file'].chunks():
+                    destination.write(chunk)
+        #if form.is_valid():
+        apt_turfs.delay(form.data)
+        messages.success(request, 'Thank you for submitting. You will get your turfs by email in 30 minutes or so.')
+        print 'hey this is running'
+        #else:
+        #    print 'this is lame'
+        #print form
+    else:
+        form = AptCutterForm()
+    return render(request,'aptform.html', {'form': form})
 
 
 def new_region(request):

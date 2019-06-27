@@ -22,6 +22,7 @@ urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^cutter/', 'cutter.views.cutter'),
     url(r'^bondcutter/', 'cutter.views.bondcutter'),
+    url(r'^aptcutter/', 'cutter.views.aptcutter'),
     url(r'^newregion/', 'cutter.views.new_region'),
     url(r'^updateregion/', 'cutter.views.update_region'),
     url(r'^attendence/(.*?)/', 'airtable_etl.views.attendence'), 

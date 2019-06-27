@@ -9,6 +9,8 @@ from collections import Counter
 from operator import itemgetter
 import MySQLdb
 from scipy.spatial import distance
+from fpdf import FPDF
+
 
 
 import csv
@@ -26,6 +28,9 @@ from cutter.models import voter_json, region, intersections, region_progress
 from fpdf import FPDF
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium import webdriver
+
+from ortools.constraint_solver import pywrapcp
+from ortools.constraint_solver import routing_enums_pb2
 
 import os
 import time
@@ -58,6 +63,8 @@ from email.MIMEText import MIMEText
 from email.MIMEAudio import MIMEAudio
 import mimetypes
 from email.encoders import encode_base64
+from pyzillow.pyzillow import ZillowWrapper, GetDeepSearchResults
+
 
 
 
@@ -1470,3 +1477,311 @@ def bond_assign_pdf(main_units,folder_name):
         
         pdf.ln(th)
     pdf.output(folder_name + '/temp_folder/Assign Sheet.pdf', 'F')
+
+
+def apartment_query(extra=""):
+    query = """
+    SELECT 
+        address,
+        zip,
+        count(distinct address_exp) units
+    FROM 
+        `voter_data_Austin, TX` 
+    WHERE 
+        1=1
+        {extra}
+    GROUP BY
+        address,
+        zip
+    HAVING
+        units > 10
+    ORDER BY units desc
+    """.format(extra=extra)
+    return read_mysql_data(query)
+
+def get_apartment_list(extra=""):
+    zillow_data = ZillowWrapper("X1-ZWz1gms3bumcy3_1sm5d")
+    apts = apartment_query(extra)
+    full_apts = []
+    for i in apts.itertuples():
+        try:
+            deep_search_response = zillow_data.get_deep_search_results(str(i.address),str(i.zip)[:5])
+            result = GetDeepSearchResults(deep_search_response)
+            if result.zestimate_amount:
+                cost = float(result.zestimate_amount)
+            else:
+                cost = float(result.tax_value) * 1.3
+            high_score = cost / 100000.0
+            low_score = 100000.0 / (cost/i.units)
+            if high_score > low_score:
+                amt = cost/i.units
+            if low_score > high_score:
+                amt = cost
+            full_apts.append([i.address,i.zip,i.units,amt,result.year_built])
+
+        except Exception as e:
+            print str(i.address),str(i.zip)[:5]
+            print e.message
+            print result
+            full_apts.append([i.address,i.zip,i.units,None,None])
+
+    #Create a final dataframe
+    data = pd.DataFrame(full_apts,columns=["address","zip","units","cost","year"])
+    data["city"] = "Austin"
+    data["state"] = "TX"
+    
+    return data
+
+
+def upload_apartment_list():
+    data = pd.read_csv("Apartment_list.csv")
+    #data["zip"] = data["zip_x"].map(str)    
+    #data["units"] = data["units_x"].map(str)
+
+    return data
+
+
+def populate_missing_lat_lon(coords):
+    for num,row in coords[pd.isnull(coords["LAT"])].iterrows():
+        g = geocoder.arcgis(row.Address[:-11])
+        latlng = g.latlng
+        if not latlng:
+            latlng = [None,None]
+        coords.at[num,"LAT"] = latlng[0]
+        coords.at[num,"LON"] = latlng[1]
+        return coords
+
+def set_apartment_score(data,center_coords,random_function,avgyear,avgcost):
+    #Set the score at a default of 100
+    data["score"] = 100.0
+    
+    #Update scores based on coordinates, year created and cost
+    for ind,row in data.iterrows():
+        score = 0
+        score += ((center_coords[0] - row.LAT)**2 + (center_coords[1] - row.LON)**2)**.5 * 69
+        score += (float(row.year) - avgyear) * (1/7)
+        score += (row.cost - avgcost) * (1.6/200000.0)
+        if score:
+            data.at[ind,"score"] = score
+            
+        #Sort the data by score
+    data["cost"] = data["cost"].map(int)
+    data = data.sort_values("score")
+    return data
+
+#Update the lat and lng for a sheet
+def update_lat_lng(lat,lon,units,add_lat,add_lon,add_units):
+    try:
+        new_lat = (lat * units + add_lat * add_units) / (1.0 * units + add_units)
+        new_lon = (lon * units + add_lon * add_units) / (1.0 * units + add_units)
+    except:
+        print [lat,lon,units,add_lat,add_lon,add_units]
+    return (new_lat,new_lon)
+
+
+def get_distance(row,*args,**kwargs):
+    lat = kwargs.pop("LAT")
+    lon = kwargs.pop("LON")
+    row["distance"] = ((row["LAT"] - lat) ** 2 + (row["LON"] - lon)**2)**.5
+    return row
+
+
+
+def assign_teams(data,target_teams,team_max = 75):
+    team_table = pd.DataFrame([],columns=["LAT","LON","teams","big_need","small_need","units"])
+    data["team"] = -1
+    #Go through the list of apartments and assign them accordingly.
+    for ind,row in data.iterrows():
+        marker = time.clock()
+        #If there are still empty teams assign this apartment to a new team
+        if sum(team_table["teams"]) < target_teams:
+            team_ind = len(team_table)
+            if row.units >= team_max:
+                teams = int(row.units)/team_max
+                big_need = int(row.units)/team_max
+                small_need = 4*int(row.units)/team_max
+            else:
+                teams = 1
+                big_need = 0
+                small_need = (int(team_max)/5) - int(row.units)/10
+            temp_frame = pd.DataFrame([[row.LAT,row.LON,teams,big_need,small_need,row.units]],\
+                                      columns=["LAT","LON","teams","big_need","small_need","units"])
+            team_table = team_table.append(temp_frame,ignore_index=True)
+            data.at[ind,"team"] = team_ind
+        #If the teams all have at least 1 property assign it to the best property
+        else:
+            if row.units >= team_max:
+                #print row
+                count = int(row.units) / team_max
+                temp_data = team_table[team_table["big_need"]>= count]
+                if len(temp_data) == 0:
+                    continue
+                #temp_data["distance"] = ((temp_data["LAT"] - row.LAT)**2 + (temp_data["LON"] - row.LON)**2)**.5
+                temp_data = temp_data.apply(get_distance,axis=1,LAT=row.LAT,LON=row.LON)
+                #print temp_data
+                #print team_table
+                team_ind = temp_data["distance"].idxmin()
+                data.at[ind,"team"] = team_ind
+                team_table.at[team_ind,"big_need"] -= count
+                (new_lat,new_lon) = update_lat_lng(row.LAT,row.LON,row.units,team_table.at[team_ind,"LAT"],\
+                                                   team_table.at[team_ind,"LON"],team_table.at[team_ind,"units"])
+                team_table.at[team_ind,"LAT"] = new_lat
+                team_table.at[team_ind,"LON"] = new_lon
+            else:
+                count = int(row.units) / 10
+                temp_data = team_table[team_table["small_need"]>= count]
+                marker = time.clock()
+                if len(temp_data) == 0:
+                    continue
+                #temp_data["distance"] = ((temp_data["LAT"] - row.LAT)**2 + (temp_data["LON"] - row.LON)**2)**.5
+                temp_data = temp_data.apply(get_distance,axis=1,LAT=row.LAT,LON=row.LON)
+                marker = time.clock()
+                team_ind = temp_data["distance"].idxmin()
+                marker = time.clock()
+                data.at[ind,"team"] = team_ind
+                marker = time.clock()
+                team_table.at[team_ind,"small_need"] -= count
+                marker = time.clock()
+                (new_lat,new_lon) = update_lat_lng(row.LAT,row.LON,row.units,team_table.at[team_ind,"LAT"],\
+                                                   team_table.at[team_ind,"LON"],team_table.at[team_ind,"units"])
+                marker = time.clock()
+                team_table.at[team_ind,"LAT"] = new_lat
+                team_table.at[team_ind,"LON"] = new_lon
+                marker = time.clock()
+            if sum(team_table["big_need"]) == 0 and sum(team_table["small_need"])==0:
+                break
+    return [data,team_table]
+        
+
+def create_distance_matrix(data,team):
+    temp_table = data[data["team"]==team]
+    df = pd.DataFrame(columns=[str(i) for i in temp_table.index] + ['dummy'])
+    for i in temp_table.itertuples():
+        for j in temp_table.itertuples():
+            df.loc[str(i.Index),str(j.Index)] = int(100000*((i.LAT - j.LAT)**2 + (i.LON - j.LON)**2)**.5)
+        df.loc[str(i.Index),"dummy"] = 0
+    df.loc['dummy',:] = [0] * len(df.columns)
+    return df
+
+
+
+# Distance callback
+def create_distance_callback(df):
+  #Create a callback to calculate distances between cities.
+
+  def distance_callback(from_node, to_node):
+    return df.iloc[from_node,to_node]
+
+  return distance_callback
+
+
+
+def get_assignment(data,team):
+    distance_matrix = create_distance_matrix(data,team)
+    
+    tsp_size = len(distance_matrix)
+    num_routes = 1
+    depot = tsp_size-1
+    #print tsp_size,num_routes,depot
+    routing = pywrapcp.RoutingModel(tsp_size, num_routes, depot)
+    search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
+    # Create the distance callback.
+    dist_callback = create_distance_callback(distance_matrix)
+    routing.SetArcCostEvaluatorOfAllVehicles(dist_callback)
+    # Solve the problem.
+    assignment = routing.SolveWithParameters(search_parameters)
+    
+    return [assignment,routing]
+
+
+
+
+def get_routes_array(assignment, num_vehicles, routing):
+    routes = []
+    for route_nbr in range(num_vehicles):
+        node = routing.Start(route_nbr)
+        route = []
+
+        while not routing.IsEnd(node):
+              index = routing.NodeToIndex(node)
+              route.append(index)
+              node = assignment.Value(routing.NextVar(node))
+        routes.append(route)
+    return routes
+
+
+def get_order(route_list):
+    enum_order = [[i,j] for i,j in enumerate(route_list)]
+    sorted_order = sorted(enum_order,key = lambda x: x[1])
+    return [i[0] for i in sorted_order]
+
+
+def iterate_apts(data,center_coords,random_function,avgyear,avgcost,est_canvas_teams,team_max):
+    start_time = time.clock()
+    data = set_apartment_score(data,center_coords,random_function,avgyear,avgcost)
+    [data,team_table] = assign_teams(data,est_canvas_teams,team_max)
+    temp_routes = []
+    for i in range(len(team_table)):
+        [assignment,routing] = get_assignment(data,i)
+        row = [get_routes_array(assignment, 1, routing)[0],assignment.ObjectiveValue()]
+        temp_routes.append(row)
+    return [data,team_table,temp_routes]
+
+
+def random_function(num):
+    return (.5 + random.random()) * num
+
+
+
+def add_pages(temp_table,teams,pdf,ind):
+    main_units = temp_table.loc[temp_table["apt_type"]=="main",:]
+    backup_units = temp_table.loc[temp_table["apt_type"]=="backup",:]
+    bonus_units = temp_table.loc[temp_table["apt_type"]=="bonus",:]
+    for count in range(int(teams)):
+
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 35)
+        pdf.cell(0, 20, 'Team # ' + str(1+ind) +"({num} team members)".format(num=str(min(2*teams,8))),ln=2,align='C')
+
+        
+        #Set the main complex
+        if len(main_units) > 0:
+            pdf.set_font('Arial', 'B', 20)
+            pdf.cell(0, 10, 'Main Complex (go here first):',ln=2)
+            pdf.set_font('Arial',"", 14)
+
+            address = main_units.iloc[0,0]
+            units = main_units.iloc[0,1]
+
+            pdf.cell(0, 7, address + ", " + str(units) + " units",ln=2)
+            pdf.cell(0, 12, "Check if you visited _____  Approx. what % of units did you visit ______",ln=2)
+
+        #Set the backup complexes
+        start = True
+        for backup_ind,backup_row in backup_units.iterrows():
+            if len(main_units) > 0:
+                pdf.set_font('Arial', 'B', 20)
+                if start:
+                    pdf.cell(0, 10, "Backup Complexes (ONLY if you can't access main):",ln=2)
+                    start = False
+            pdf.set_font('Arial',"", 14)
+
+            address = backup_row.address
+            units = backup_row.units
+
+            pdf.cell(0, 7, address + ", " + str(units) + " units",ln=2)
+            pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
+
+        #Set the bonus complexes
+        if len(main_units) > 0:
+            pdf.set_font('Arial', 'B', 20)
+            pdf.cell(0, 10, "Bonus Complexes",ln=2)
+        pdf.set_font('Arial',"", 14)
+
+        for bonus_ind,bonus_row in bonus_units.iterrows():
+            address = bonus_row["address"]
+            units = bonus_row["units"]
+
+            pdf.cell(0, 7, address.encode('utf8') + ", " + str(units) + " units",ln=2)
+
+            pdf.cell(0, 7, "Check if you visited _____  Approx. what % of units did you visit _________",ln=2)
