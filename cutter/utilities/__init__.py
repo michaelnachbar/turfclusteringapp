@@ -1,32 +1,25 @@
-from math import radians, sin, cos, sqrt, asin
-from sklearn.cluster import KMeans
-import pandas as pd
-import geocoder
-import numpy as np
-import csv
-from collections import Counter
-from operator import itemgetter
-from scipy.spatial import distance
-
-from multiprocessing import Pool
-from multiprocessing.dummy import Pool as ThreadPool 
-
-
-
-from django.conf import settings
-from django.db.models import Max
-from cutter.models import voter_json, region, intersections, region_progress
-
-
-from ortools.constraint_solver import pywrapcp
-from ortools.constraint_solver import routing_enums_pb2
-
 import os
 import time
 import json
 import re
 import copy
+import csv
+from collections import Counter
+from operator import itemgetter
 
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
+
+
+from math import radians, sin, cos, sqrt, asin
+from sklearn.cluster import KMeans
+import pandas as pd
+import geocoder
+import numpy as np
+from scipy.spatial import distance
+
+from ortools.constraint_solver import pywrapcp
+from ortools.constraint_solver import routing_enums_pb2
 
 import httplib2
 
@@ -35,9 +28,11 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 #from google.oauth2 import service_account
-import base64
 #from googleapiclient import errors, discovery
 from pyzillow.pyzillow import ZillowWrapper, GetDeepSearchResults
+
+
+from cutter.models import voter_json, region, intersections, region_progress
 
 
 from .database import *
