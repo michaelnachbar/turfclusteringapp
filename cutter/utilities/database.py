@@ -25,17 +25,6 @@ def make_sqlalchemy_connection():
     dbname = settings.DATABASES['default']['NAME']
     return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}/{name}'.format(user=user,password=password,host=host,name=dbname))
 
-def make_mysqldb_connection():
-    x = MySQLdb.connect(host='localhost', \
-                    user=settings.DATABASES['default']['USER'], \
-                    passwd=settings.DATABASES['default']['PASSWORD'], \
-                    db="canvas_cutting")
-    x = MySQLdb.connect(host="159.89.185.59", \
-                    user="username", \
-                    passwd="password", \
-                    db="canvas_cutting")
-    return x
-
 def execute_mysql(statement):
     conn = make_mysql_connection(True)
     c=conn.cursor()
@@ -61,7 +50,7 @@ def read_mysql_data(query,alchemy=True):
     if alchemy:
         con = make_sqlalchemy_connection()
     else:
-        con = make_mysqldb_connection()
+        con = make_mysql_connection()
     return pd.read_sql(query,con)
 
 def make_json_columns(df,stand_alone_columns,json_columns):
