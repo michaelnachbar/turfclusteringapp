@@ -21,7 +21,9 @@ def make_mysql_connection(skip_db = False):
 def make_sqlalchemy_connection():
     user = settings.DATABASES['default']['USER']
     password = settings.DATABASES['default']['PASSWORD']
-    return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@localhost:3306/canvas_cutting'.format(user=user,password=password))
+    host = settings.DATABASES['default']['HOST'] or 'localhost'
+    dbname = settings.DATABASES['default']['NAME']
+    return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}/{name}'.format(user=user,password=password,host=host,name=dbname))
 
 def make_mysqldb_connection():
     x = MySQLdb.connect(host='localhost', \
