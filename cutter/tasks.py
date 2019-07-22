@@ -1,27 +1,19 @@
+import os
+import time
 import string
+import shutil
+import itertools
+from random import randint
+from multiprocessing.dummy import Pool as ThreadPool 
 
-from django.contrib.auth.models import User
-from django.utils.crypto import get_random_string
-
-
-from celery import shared_task
+import sqlalchemy
+import censusgeocode
 
 import pandas as pd
 import numpy as np
 from fpdf import FPDF
-import os
-import shutil
-from random import randint
-from multiprocessing.dummy import Pool as ThreadPool 
-import censusgeocode
-import random
-import itertools
-import time
-import sqlalchemy
 
-from selenium import webdriver
-from pyvirtualdisplay import Display
-
+from celery import shared_task
 
 from utilities import make_filtered_file, load_threshold_dict, update_thresholds, update_slice_data_nulls, update_slice_data_avgs,\
 update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets, get_cluster_totals, update_cluster_numbers,\
@@ -800,7 +792,7 @@ def apt_turfs(form):
     center_coords = get_coordinates(center_address,False)
     team_max = 45
     skip_addresses = pd.read_csv("bond_skip_addresses.csv")
-    print 'Set cooords'
+    print 'Set coords'
 
     #Filter by region
     #Filter by skip addresses
@@ -837,7 +829,7 @@ def apt_turfs(form):
 
     pdf = FPDF()
 
-    #Scroll through each team, label apaartment type, write PDFs 
+    #Scroll through each team, label apartment type, write PDFs 
     for ind,row in min_team.iterrows():
         teams = row.teams
         temp_table = min_data[min_data["team"]==ind]
@@ -864,9 +856,6 @@ def apt_turfs(form):
 
     #Delete the temp folder
     shutil.rmtree(folder_name)
-
-        
-    
 
     return
 
