@@ -65,9 +65,36 @@ def make_img_file(cluster,folder):
         make_img_file.driver = driver
     cwd = os.getcwd()
 
+    # We need access to the map object to figure out when its done loading
+    # however GoogleMapPlotter outputs javascript that makes it a local variable
+    # so we can't get at it unless its made global.  Unfortunately, google maps
+    # api has no way of getting all map objects.
+    htmlpath = "{cwd}/{folder}/temp_map.html".format(cwd=cwd,folder=folder)
+    with open(htmlpath) as f:
+        data = f.read().replace('var map', 'window.map')
+        with open(htmlpath, 'w') as f:
+            f.write(data)
+    
     driver.get("file://{cwd}/{folder}/temp_map.html".format(cwd=cwd,folder=folder))
-    #Wait 4 seconds for the page to load
-    time.sleep(4)      
+    
+    # Async execute this javascript, which should return when the map is
+    # fully loaded
+    driver.execute_async_script(r'''
+// execute_async_script waits for callback to be called
+var callback = arguments[arguments.length - 1];
+var d = document.createElement('div');
+document.getElementsByTagName('body')[0].prepend(d);
+try {
+    google.maps.event.addListenerOnce(map, 'tilesloaded', function (){
+        d.innerHTML = '<div id="map-loaded" />';
+        callback();
+    });
+} catch(e) {
+    d.innerHTML = '<h1>Could not add loaded listener. Map may not be fully loaded!! ('+e+')</h1>';
+    callback();
+}
+    ''')
+    
     #Save the screenshot as a file
     driver.get_screenshot_as_file("{folder}/temp_map_{cluster}.png".format(cluster=cluster,folder=folder))
 
