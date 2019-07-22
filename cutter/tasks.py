@@ -290,6 +290,7 @@ def output_turfs(form):
             make_img_file(cluster,folder_name)
             #Put the image file onto the PDF
             add_img(pdf,cluster,folder_name,w=150)
+        make_img_file.driver.quit()
 
 
         #Save the PDF
