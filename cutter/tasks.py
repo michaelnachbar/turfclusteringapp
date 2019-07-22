@@ -122,7 +122,7 @@ def output_turfs(form):
 
         #Load this list of intersections
         threshold_dict = load_threshold_dict(region,True)
-        print 'loaded thershold dict'
+        print 'loaded threshold dict'
 
 
 

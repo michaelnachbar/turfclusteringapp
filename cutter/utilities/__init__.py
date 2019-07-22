@@ -41,7 +41,7 @@ from .output import *
 
 
 #Take a row with "LAT" and "LON" and then kwargs 'lat1' and 'lon1'
-#And calculate teh haversine distance between the 2 points
+#And calculate the haversine distance between the 2 points
 def add_distance(row,**kwargs):
     #print kwargs
     lat2 = row["LAT"]
