@@ -6,9 +6,9 @@ import zipfile
 import gmplot
 import numpy as np
 from fpdf import FPDF
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from selenium import webdriver
 from pyvirtualdisplay import Display
+from selenium import webdriver
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 
 #Convert a folder to a zip file
@@ -50,24 +50,53 @@ def make_html_file(df,folder):
 #We are opening it in a browser and taking a screenshot
 #So if there's a better way that is preferable
 def make_img_file(cluster,folder):
-    #display = Display(visible=0, size=(800, 800))  
-    #display.start()
-    #Have a virtual Chrome driver open the html file
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument('headless')
-    chrome_options.add_argument('no-sandbox')
-    driver = webdriver.Chrome(chrome_options=chrome_options)   
-    #driver = webdriver(\
-        #command_executor='http://172.19.0.5:4444/wd/hub',\
-        #desired_capabilities=DesiredCapabilities.CHROME)   
+    driver = getattr(make_img_file, 'driver', None)
+    if not driver:
+        #display = Display(visible=0, size=(800, 800))
+        #display.start()
+        #Have a virtual Chrome driver open the html file
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument('headless')
+        chrome_options.add_argument('no-sandbox')
+        driver = webdriver.Chrome(chrome_options=chrome_options)
+        #driver = webdriver(\
+            #command_executor='http://172.19.0.5:4444/wd/hub',\
+            #desired_capabilities=DesiredCapabilities.CHROME)
+        make_img_file.driver = driver
     cwd = os.getcwd()
 
+    # We need access to the map object to figure out when its done loading
+    # however GoogleMapPlotter outputs javascript that makes it a local variable
+    # so we can't get at it unless its made global.  Unfortunately, google maps
+    # api has no way of getting all map objects.
+    htmlpath = "{cwd}/{folder}/temp_map.html".format(cwd=cwd,folder=folder)
+    with open(htmlpath) as f:
+        data = f.read().replace('var map', 'window.map')
+        with open(htmlpath, 'w') as f:
+            f.write(data)
+    
     driver.get("file://{cwd}/{folder}/temp_map.html".format(cwd=cwd,folder=folder))
-    #Wait 4 seconds for the page to load
-    time.sleep(4)      
+    
+    # Async execute this javascript, which should return when the map is
+    # fully loaded
+    driver.execute_async_script(r'''
+// execute_async_script waits for callback to be called
+var callback = arguments[arguments.length - 1];
+var d = document.createElement('div');
+document.getElementsByTagName('body')[0].prepend(d);
+try {
+    google.maps.event.addListenerOnce(map, 'tilesloaded', function (){
+        d.innerHTML = '<div id="map-loaded" />';
+        callback();
+    });
+} catch(e) {
+    d.innerHTML = '<h1>Could not add loaded listener. Map may not be fully loaded!! ('+e+')</h1>';
+    callback();
+}
+    ''')
+    
     #Save the screenshot as a file
     driver.get_screenshot_as_file("{folder}/temp_map_{cluster}.png".format(cluster=cluster,folder=folder))
-    driver.quit()
 
 
 #Add an image to a specified pdf file
