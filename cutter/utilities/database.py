@@ -10,35 +10,51 @@ import pandas as pd
 from django.conf import settings
 
 
-def make_mysql_connection(skip_db = False):
-    user = settings.DATABASES['default']['USER']
-    password = settings.DATABASES['default']['PASSWORD']
-    database_name = settings.DATABASES['default']['NAME']
-    if skip_db:
-        return MySQLdb.connect(user=user,password=password)
-    return MySQLdb.connect(user=user,password=password,database_name=database_name)
+def new_connection():
+    "Return a new database connection."
+    from django.db import connection
+    connection = connection.copy()
+    if not connection.connection:
+        connection.connect()
+    
+    return connection.connection
 
-def make_sqlalchemy_connection():
-    user = settings.DATABASES['default']['USER']
-    password = settings.DATABASES['default']['PASSWORD']
-    host = settings.DATABASES['default']['HOST'] or 'localhost'
-    dbname = settings.DATABASES['default']['NAME']
-    return sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}/{name}'.format(user=user,password=password,host=host,name=dbname))
+def new_sqlalchemy_connection():
+    "Return a new sqlalchemy connection."
+    from django.conf import settings
+    
+    default_sqlalchemy_dialects = 'mysql oracle postgresql sqlite mssql'.split(' ')
+    
+    driver = settings.DATABASES['default'].get('DRIVER', None)
+    dialect = settings.DATABASES['default'].get('DIALECT', None)
+    if not dialect:
+        engine = settings.DATABASES['default'].get('ENGINE', None)
+        if not engine:
+            raise RuntimeError("Must specify database ENGINE in settings or DIALECT.")
+        engine = engine.split('.')[-1]
+        for dialect in default_sqlalchemy_dialects:
+            if engine.startswith(dialect):
+                break
+        else:
+            dialect = None
+            raise RuntimeError("Set DATABASES['default'].DIALECT in settings, you're probably using a custom engine ({}).".format(engine))
+    schema = '+'.join(filter(None, (dialect, driver)))
+    
+    return sqlalchemy.create_engine(schema+'://', creator=new_connection)
 
 def execute_mysql(statement):
-    conn = make_mysql_connection(True)
+    "Helper to execute SQL with the default database connection."
+    conn = new_connection()
     c=conn.cursor()
-    c.execute(statement)
+    return c.execute(statement)
 
 def simple_query(query):
-    conn = make_mysql_connection(True)
-    c=conn.cursor()
-    c.execute(query)
-    return c.fetchall()
+    "Helper to return rows from executed SQL with the default database connection."
+    return execute_mysql(query).fetchall()
 
 def write_mysql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None,dtype=None):
     df["region"] = region
-    con = make_sqlalchemy_connection()
+    con = new_sqlalchemy_connection()
     if not better_append:
         df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,chunksize=chunksize,dtype=dtype)
     else:
@@ -48,9 +64,9 @@ def write_mysql_data(df,table_name,region,if_exists='append',better_append=False
 
 def read_mysql_data(query,alchemy=True):
     if alchemy:
-        con = make_sqlalchemy_connection()
+        con = new_sqlalchemy_connection()
     else:
-        con = make_mysql_connection()
+        con = new_connection()
     return pd.read_sql(query,con)
 
 def make_json_columns(df,stand_alone_columns,json_columns):
