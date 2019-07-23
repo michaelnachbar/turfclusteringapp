@@ -19,11 +19,13 @@ from utilities import make_filtered_file, load_threshold_dict, update_thresholds
 update_slice_data_clusters, update_slice_data_check_clusters, check_bad_streets, get_cluster_totals, update_cluster_numbers,\
 split_cluster, make_html_file, get_street_list, text_page, make_img_file, add_img, new_whole_cluster, write_cluster, write_address_rows, \
 write_assign_sheet, send_email, send_error_email, write_json_data, iterate_merge, get_street_change_recs, clean_dataframe, \
-write_mysql_data, read_mysql_data, execute_mysql, simple_query, send_file_email, add_new_region, get_coverage_ratio, replace_list, \
+send_file_email, add_new_region, get_coverage_ratio, replace_list, \
 send_error_report,send_nofile_email, matchmaker, mile_distance, add_score, get_coordinates, read_afford_units, split_afford_units, \
 main_backup_afford_units, get_bonus_afford_units, get_market_rate_units, clean_market_rate_units, split_market_rate_units, \
 main_backup_market_rate_units, get_bonus_market_rate_units, merge_units, match_frames, bonus_match, make_pdf, bond_assign_pdf, \
 get_apartment_list, populate_missing_lat_lon, iterate_apts, random_function, get_order, add_pages, upload_apartment_list
+
+from utilities.database import write_sql_data, read_sql_data, execute_sql, simple_query
 
 from cutter.models import region_progress
 
@@ -58,7 +60,7 @@ def output_turfs(form):
         #Will replace with an actual database in a future update
         #data = pd.read_excel("Updated_data.xlsx")
         #data = pd.read_excel("District_7_data.xlsx")
-        data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
+        data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
         print len(data)
         if extra_filters:
             query = """
@@ -69,7 +71,7 @@ def output_turfs(form):
             WHERE
                 {extra_filters}
             """.format(region = region,extra_filters = extra_filters)
-            good_addresses = read_mysql_data(query)
+            good_addresses = read_sql_data(query)
             print len(good_addresses)
             if not include_nonvoters:
                 columns = data.columns
@@ -86,7 +88,7 @@ def output_turfs(form):
                 v_data,nv_data = None,None
         print data.columns
         print data.head()
-        #data = read_mysql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
+        #data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
 
 
         #Based on turf size and central point take the X closest addresses
@@ -415,7 +417,7 @@ def add_region(form):
                 if not progress.voter_json_complete:
                     
                     try:
-                        write_mysql_data(voter_data,"voter_data_" + region,region,'replace',dtype=varchar_len_dict)
+                        write_sql_data(voter_data,"voter_data_" + region,region,'replace',dtype=varchar_len_dict)
                     except Exception as e:
                         print type(e)     # the exception instance
                         print e.args      # arguments stored in .args
@@ -425,7 +427,7 @@ def add_region(form):
             else:
                 if not progress.voter_json_complete:
                     try:
-                        write_mysql_data(voter_data,"voter_data_" + region,region,'append')
+                        write_sql_data(voter_data,"voter_data_" + region,region,'append')
                     except Exception as e:
                         print type(e)     # the exception instance
                         print e.args      # arguments stored in .args
@@ -552,7 +554,7 @@ def add_region(form):
         combo_data["NUMBER"] = combo_data["NUMBER"].map(int)
         combo_data.loc[:,("region","address","full_street","orig_address","STREET")] = \
             combo_data.loc[:,("region","address","full_street","orig_address","STREET")].fillna("")
-        write_mysql_data(combo_data,'cutter_canvas_data',region)
+        write_sql_data(combo_data,'cutter_canvas_data',region)
         progress.canvas_data_complete = True
         
         
@@ -645,7 +647,7 @@ def add_region_2(form):
         results_dict = iterate_merge(geocode_data,new_addresses,None)
      
         if not progress.bad_data_complete:
-            write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region)
+            write_sql_data(results_dict['bad_data'],'cutter_bad_data',region)
             progress.bad_data_complete = True
         if not progress.canvas_data_complete:
             combo_data = results_dict['good_data'].append(results_dict['bad_full_geo_data'],ignore_index=True)
@@ -658,7 +660,7 @@ def add_region_2(form):
             print max(combo_data["NUMBER"])
             print min(combo_data["NUMBER"])
             combo_data.to_csv("Test.csv")
-            write_mysql_data(combo_data,'cutter_canvas_data',region)
+            write_sql_data(combo_data,'cutter_canvas_data',region)
             progress.canvas_data_complete = True
 
         
@@ -691,8 +693,8 @@ def region_update(form):
     region = form['region_name']
     try:
         orig_ratio = get_coverage_ratio(region)
-        bad_data = read_mysql_data("SELECT * FROM canvas_cutting.cutter_bad_data where region = '{region}'".format(region=region))
-        bad_geo_data = read_mysql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM canvas_cutting.cutter_canvas_data where full_street = ""
+        bad_data = read_sql_data("SELECT * FROM canvas_cutting.cutter_bad_data where region = '{region}'".format(region=region))
+        bad_geo_data = read_sql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM canvas_cutting.cutter_canvas_data where full_street = ""
             and region = '{region}'""".format(region=region))
 
         print len(bad_data)
@@ -703,16 +705,16 @@ def region_update(form):
 
         results_dict['bad_full_geo_data'].loc[:,("doors","voters")] = results_dict['bad_full_geo_data'].loc[:,("doors","voters")].fillna(0)
         results_dict['bad_full_geo_data'].loc[:,("full_street","orig_address")] = results_dict['bad_full_geo_data'].loc[:,("full_street","orig_address")].fillna("")
-        write_mysql_data(results_dict['bad_full_geo_data'],'cutter_bad_geo_data_failsafe',region)
-        write_mysql_data(results_dict['bad_data'],'cutter_bad_data',region,'replace')
+        write_sql_data(results_dict['bad_full_geo_data'],'cutter_bad_geo_data_failsafe',region)
+        write_sql_data(results_dict['bad_data'],'cutter_bad_data',region,'replace')
 
-        write_mysql_data(results_dict['good_data'],'cutter_canvas_data',region)    
+        write_sql_data(results_dict['good_data'],'cutter_canvas_data',region)    
         
         
         
-        execute_mysql("DELETE FROM canvas_cutting.cutter_canvas_data WHERE full_street = '' and region = '{region}'".format(region=region))
-        write_mysql_data(results_dict['bad_full_geo_data'],'cutter_canvas_data',region)
-        execute_mysql("DELETE FROM canvas_cutting.cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
+        execute_sql("DELETE FROM canvas_cutting.cutter_canvas_data WHERE full_street = '' and region = '{region}'".format(region=region))
+        write_sql_data(results_dict['bad_full_geo_data'],'cutter_canvas_data',region)
+        execute_sql("DELETE FROM canvas_cutting.cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
 
         new_ratio = get_coverage_ratio(region)
         email_text = "Thank you for your corrections. They took us from {perc1}% of all registered voters geocoded to {perc2}% of all registered voters geocoded. Attached is a list of some of the streets missing coverage.".format(perc1=orig_ratio,perc2=new_ratio)

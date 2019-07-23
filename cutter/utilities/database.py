@@ -42,7 +42,7 @@ def new_sqlalchemy_connection():
     
     return sqlalchemy.create_engine(schema+'://', creator=new_connection)
 
-def execute_mysql(statement):
+def execute_sql(statement):
     "Helper to execute SQL with the default database connection."
     conn = new_connection()
     c=conn.cursor()
@@ -50,19 +50,19 @@ def execute_mysql(statement):
 
 def simple_query(query):
     "Helper to return rows from executed SQL with the default database connection."
-    return execute_mysql(query).fetchall()
+    return execute_sql(query).fetchall()
 
-def write_mysql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None,dtype=None):
+def write_sql_data(df,table_name,region,if_exists='append',better_append=False,chunksize=None,dtype=None):
     df["region"] = region
     con = new_sqlalchemy_connection()
     if not better_append:
         df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,chunksize=chunksize,dtype=dtype)
     else:
-        max_id = read_mysql_data("SELECT MAX(id) FROM {table_name}".format(table_name=table_name))
+        max_id = read_sql_data("SELECT MAX(id) FROM {table_name}".format(table_name=table_name))
         id_range = range(max_id+1,max_id + len(df) + 1)
         df.to_sql(con=con, name=table_name, if_exists=if_exists,index=False,index_label=id_range) 
 
-def read_mysql_data(query,alchemy=True):
+def read_sql_data(query,alchemy=True):
     if alchemy:
         con = new_sqlalchemy_connection()
     else:
