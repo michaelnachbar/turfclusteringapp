@@ -60,7 +60,7 @@ def output_turfs(form):
         #Will replace with an actual database in a future update
         #data = pd.read_excel("Updated_data.xlsx")
         #data = pd.read_excel("District_7_data.xlsx")
-        data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = '{region}'".format(region=region))
+        data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM cutter_canvas_data where region = '{region}'".format(region=region))
         print len(data)
         if extra_filters:
             query = """
@@ -88,7 +88,7 @@ def output_turfs(form):
                 v_data,nv_data = None,None
         print data.columns
         print data.head()
-        #data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM canvas_cutting.cutter_canvas_data where region = 'Austin,  TX'")
+        #data = read_sql_data("SELECT distinct region, address, full_street, orig_address, voters, doors, NUMBER, STREET, LAT, LON FROM cutter_canvas_data where region = 'Austin,  TX'")
 
 
         #Based on turf size and central point take the X closest addresses
@@ -693,8 +693,8 @@ def region_update(form):
     region = form['region_name']
     try:
         orig_ratio = get_coverage_ratio(region)
-        bad_data = read_sql_data("SELECT * FROM canvas_cutting.cutter_bad_data where region = '{region}'".format(region=region))
-        bad_geo_data = read_sql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM canvas_cutting.cutter_canvas_data where full_street = ""
+        bad_data = read_sql_data("SELECT * FROM cutter_bad_data where region = '{region}'".format(region=region))
+        bad_geo_data = read_sql_data("""SELECT address,LON,LAT,STREET,NUMBER FROM cutter_canvas_data where full_street = ""
             and region = '{region}'""".format(region=region))
 
         print len(bad_data)
@@ -712,9 +712,9 @@ def region_update(form):
         
         
         
-        execute_sql("DELETE FROM canvas_cutting.cutter_canvas_data WHERE full_street = '' and region = '{region}'".format(region=region))
+        execute_sql("DELETE FROM cutter_canvas_data WHERE full_street = '' and region = '{region}'".format(region=region))
         write_sql_data(results_dict['bad_full_geo_data'],'cutter_canvas_data',region)
-        execute_sql("DELETE FROM canvas_cutting.cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
+        execute_sql("DELETE FROM cutter_bad_geo_data_failsafe WHERE full_street = '' and region = '{region}'".format(region=region))
 
         new_ratio = get_coverage_ratio(region)
         email_text = "Thank you for your corrections. They took us from {perc1}% of all registered voters geocoded to {perc2}% of all registered voters geocoded. Attached is a list of some of the streets missing coverage.".format(perc1=orig_ratio,perc2=new_ratio)

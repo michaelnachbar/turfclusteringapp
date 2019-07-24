@@ -106,7 +106,7 @@ def get_coordinates(address,check_intersect=True):
 #As will threshold_dict['Walnut Street']['12th Street']
 def load_threshold_dict(region,lon_only=False):
     #intersect_data = pd.read_csv("Intersections_1.csv")
-    intersect_data = read_sql_data("""SELECT * from canvas_cutting.cutter_intersections where lat <> 0 and
+    intersect_data = read_sql_data("""SELECT * from cutter_intersections where lat <> 0 and
          region = '{region}'""".format(region = region))
     if lon_only:
         intersect_data = intersect_data[intersect_data["lon"].notnull()]
@@ -726,10 +726,10 @@ def get_street_change_recs(df,**kwargs):
     pool.map(check_tail_wrapper,tail_tuples)
 
 def get_coverage_ratio(region):
-    good_data = simple_query("""SELECT COUNT(*) FROM canvas_cutting.cutter_canvas_data where region = '{region}' and 
+    good_data = simple_query("""SELECT COUNT(*) FROM cutter_canvas_data where region = '{region}' and 
          full_street <> ''""".format(region=region))[0][0]
     print good_data
-    bad_data = simple_query("""SELECT COUNT(*) FROM canvas_cutting.cutter_bad_data where region = '{region}'""".format(region=region))[0][0]
+    bad_data = simple_query("""SELECT COUNT(*) FROM cutter_bad_data where region = '{region}'""".format(region=region))[0][0]
     print bad_data
     return 1.0 * good_data / (good_data + bad_data)
 
