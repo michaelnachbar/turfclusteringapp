@@ -4,15 +4,27 @@ from django.db import models
 from django_mysql.models import JSONField
 
 
-def install_sqlite_json_field():
-    "Install sqlite hooks to load/dump json."
+def install_sqlite_json_field(LZMA_HDR='\xca\xfeLZ', min_len=200):
+    "Install sqlite hooks to load/dump json which may be lzma compressed."
     import sqlite3
     import json
+    try:
+        import lzma
+    except:
+        try:
+            from backports import lzma
+        except:
+            pass
 
     def adapt_json(data):
-        return (json.dumps(data, sort_keys=True)).encode()
+        data = (json.dumps(data, sort_keys=True)).encode()
+        if len(data) < min_len:
+            return data
+        return buffer(LZMA_HDR+lzma.compress(data, format=lzma.FORMAT_ALONE, preset=9))
 
     def convert_json(blob):
+        if blob[:4] == LZMA_HDR:
+            blob = lzma.decompress(blob[4:])
         return json.loads(blob.decode())
 
     sqlite3.register_adapter(dict, adapt_json)
