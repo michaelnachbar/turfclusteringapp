@@ -4,6 +4,35 @@ from django.db import models
 from django_mysql.models import JSONField
 
 
+def install_sqlite_json_field():
+    "Install sqlite hooks to load/dump json."
+    import sqlite3
+    import json
+
+    def adapt_json(data):
+        return (json.dumps(data, sort_keys=True)).encode()
+
+    def convert_json(blob):
+        return json.loads(blob.decode())
+
+    sqlite3.register_adapter(dict, adapt_json)
+    sqlite3.register_adapter(list, adapt_json)
+    sqlite3.register_adapter(tuple, adapt_json)
+    sqlite3.register_converter(str('JSON'), convert_json)
+install_sqlite_json_field()
+
+# JSONField is generic enough that we can use it for sqlite connections as well
+# as long as the adapter and converter hooks are used.  So by-pass the mysql
+# version check if the default database connection is sqlite.
+JSONField_orig__check_mysql_version = JSONField._check_mysql_version
+def _check_sqlite(self):
+    from django.db import DEFAULT_DB_ALIAS, connections
+    if getattr(connections[DEFAULT_DB_ALIAS], 'vendor', None) == 'sqlite':
+        return []
+    return JSONField_orig__check_mysql_version(self)
+JSONField._check_mysql_version = _check_sqlite
+
+
 # Create your models here.
 class region(models.Model):
     name = models.CharField(max_length=100)
