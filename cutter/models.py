@@ -4,6 +4,47 @@ from django.db import models
 from django_mysql.models import JSONField
 
 
+def install_sqlite_json_field(LZMA_HDR='\xca\xfeLZ', min_len=200):
+    "Install sqlite hooks to load/dump json which may be lzma compressed."
+    import sqlite3
+    import json
+    try:
+        import lzma
+    except:
+        try:
+            from backports import lzma
+        except:
+            pass
+
+    def adapt_json(data):
+        data = (json.dumps(data, sort_keys=True)).encode()
+        if len(data) < min_len:
+            return data
+        return buffer(LZMA_HDR+lzma.compress(data, format=lzma.FORMAT_ALONE, preset=9))
+
+    def convert_json(blob):
+        if blob[:4] == LZMA_HDR:
+            blob = lzma.decompress(blob[4:])
+        return json.loads(blob.decode())
+
+    sqlite3.register_adapter(dict, adapt_json)
+    sqlite3.register_adapter(list, adapt_json)
+    sqlite3.register_adapter(tuple, adapt_json)
+    sqlite3.register_converter(str('JSON'), convert_json)
+install_sqlite_json_field()
+
+# JSONField is generic enough that we can use it for sqlite connections as well
+# as long as the adapter and converter hooks are used.  So by-pass the mysql
+# version check if the default database connection is sqlite.
+JSONField_orig__check_mysql_version = JSONField._check_mysql_version
+def _check_sqlite(self):
+    from django.db import DEFAULT_DB_ALIAS, connections
+    if getattr(connections[DEFAULT_DB_ALIAS], 'vendor', None) == 'sqlite':
+        return []
+    return JSONField_orig__check_mysql_version(self)
+JSONField._check_mysql_version = _check_sqlite
+
+
 # Create your models here.
 class region(models.Model):
     name = models.CharField(max_length=100)
